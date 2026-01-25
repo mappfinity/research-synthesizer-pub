@@ -34,7 +34,120 @@ A lightweight, extensible research-assistant framework that combines deep analyt
 - **Type-safe codebase** - Full type hints and LangGraph state management
 - **Async operations** - Background tasks don't block the UI
 - **Programmatic API** - Use as a Python library for custom workflows
+  
+---
+## Simplified High-Level System Flow
 
+```mermaid
+graph TD
+    START["🚀 User Query"] --> SYNTH["ResearchSynthesizer<br/>Main Orchestrator"]
+    
+    SYNTH --> STATE["ResearchState<br/>Initialize"]
+    STATE --> WF["WorkflowManager<br/>Execute Workflow"]
+    
+    WF --> ROUTE{{"Route<br/>Sources"}}
+    
+    ROUTE -->|Docs| DOC["📚 Document<br/>IndexingManager"]
+    ROUTE -->|ArXiv| ARXIV["📜 ArXiv<br/>RetrievalManager"]
+    ROUTE -->|Web| WEB["🌐 Web<br/>RetrievalManager"]
+    
+    DOC --> SCAN["DocumentIndexer<br/>scan & load"]
+    SCAN --> EMBED_D["EmbeddingsCacheManager<br/>cache→compute"]
+    EMBED_D --> VS["VectorStoreManager<br/>FAISS storage"]
+    
+    ARXIV --> ARXIV_API["QueryOptimizer<br/>ArXiv search"]
+    ARXIV_API --> EMBED_A["Embed results<br/>add to FAISS"]
+    
+    WEB --> WEB_API["QueryOptimizer<br/>Tavily search"]
+    WEB_API --> PDF["PDFManager<br/>cache PDFs"]
+    PDF --> EMBED_W["Embed PDFs<br/>add to FAISS"]
+    
+    VS --> SEARCH["RetrievalManager<br/>search_all_indexes"]
+    EMBED_A --> SEARCH
+    EMBED_W --> SEARCH
+    
+    SEARCH --> RERANK["DocumentReranker<br/>score & rerank<br/>SourceTypeClassifier"]
+    
+    RERANK --> TOP_K["Top-K Results<br/>deduped & truncated"]
+    
+    TOP_K --> REASON["ReasoningController<br/>LLM analysis<br/>with retry"]
+    
+    REASON --> VALIDATE_R["ReasoningOutputValidator<br/>SourceValidator<br/>schema + citation check"]
+    
+    VALIDATE_R -->|Valid| VALID["✅ Valid"]
+    VALIDATE_R -->|Retry| REASON
+    
+    VALID --> SYNTH_E["SynthesisEngine<br/>generate report<br/>single or two-stage"]
+    
+    SYNTH_E --> VALIDATE_S["SynthesisOutputValidator<br/>final validation"]
+    
+    VALIDATE_S --> FORMAT{{"Output<br/>Format"}}
+    
+    FORMAT -->|Markdown| MD["Format<br/>Markdown"]
+    FORMAT -->|PDF| PDF2["Format<br/>PDF"]
+    FORMAT -->|JSON| JSON["Format<br/>JSON"]
+    
+    MD --> REPORT["ReportManager<br/>save report"]
+    PDF2 --> REPORT
+    JSON --> REPORT
+    
+    REPORT --> DONE["✅ Return<br/>ResearchState"]
+    
+    classDef orchestrator fill:#FF6B6B,stroke:#333,color:#fff,stroke-width:3px,font-weight:bold
+    classDef manager fill:#4ECDC4,stroke:#333,color:#fff,stroke-width:2px
+    classDef processor fill:#FFEAA7,stroke:#333,color:#000,stroke-width:2px
+    classDef validator fill:#96CEB4,stroke:#333,color:#fff,stroke-width:2px
+    classDef storage fill:#D4A5A5,stroke:#333,color:#fff,stroke-width:2px
+    classDef external fill:#FFB6C1,stroke:#333,color:#000,stroke-width:2px
+    classDef decision fill:#E8D5C4,stroke:#333,color:#000,stroke-width:2px
+    classDef output fill:#DDA15E,stroke:#333,color:#fff,stroke-width:2px
+    
+    class SYNTH,REASON,SYNTH_E,REPORT orchestrator
+    class WF,RERANK,DOC,ARXIV,WEB manager
+    class VALIDATE_R,VALIDATE_S validator
+    class VS,EMBED_D,EMBED_A,EMBED_W storage
+    class ARXIV_API,WEB_API external
+    class ROUTE,FORMAT decision
+    class DONE output
+```
+
+---
+
+## Key Class Relationships
+
+### Core Orchestrators
+- **ResearchSynthesizer**: Main entry point, coordinates all components
+- **WorkflowManager**: Executes research pipeline with parallel retrieval
+- **ReasoningController**: Manages reasoning phase with retry logic
+- **SynthesisController/Engine**: Generates final reports (single or two-stage)
+
+### Retrieval & Indexing
+- **IndexingManager**: Coordinates document loading and embedding
+- **DocumentIndexer**: Scans, chunks, and classifies documents
+- **RetrievalManager**: Manages ArXiv and web searches
+- **VectorStoreManager** + **DualVectorStoreManager**: FAISS indices (books/papers)
+- **EmbeddingsCacheManager**: SQLite cache with 60-80% hit rate
+
+### Source Management
+- **SourceTypeClassifier**: Classifies docs as book/paper/web
+- **PDFManager**: Caches and manages PDF downloads
+- **WebPDFEmbedder**: Filters and embeds web PDFs
+- **AsyncPDFTitleEnhancer**: Enhances PDF metadata
+
+### Search & Ranking
+- **DocumentReranker**: Cross-encoder scoring and weighting
+- **QueryOptimizer**: Refines queries (optional LLM)
+
+### Validation & Output
+- **ReasoningOutputValidator**: Validates prose reasoning
+- **SourceValidator**: Checks citation integrity
+- **SynthesisOutputValidator**: Validates report structure
+- **ReportManager**: Saves in markdown/PDF/JSON formats
+
+### Utilities
+- **LoggerConfig**: Centralized logging
+- **MinimalCitationProcessor**: Citation formatting
+- **ReasoningCapabilityProbe**: Model capability detection
 ---
 
 ## 🎬 Quick Start
@@ -404,104 +517,6 @@ The `ResearchSynthesizer` class initializes components in this order:
 11. Workflow manager
 
 This order is critical because dependencies must be initialized before consumers.
-
----
-
-## 📊 System Flow Diagram
-
-```mermaid
-graph TD
-    A["👤 User Input<br/>Research Query"] -->|Enter Question| B["🖥️ UI: Gradio App<br/>handlers.py"]
-    
-    B -->|Check Mode| C{Single-LLM<br/>or<br/>Dual-LLM?}
-    
-    C -->|Single-Stage| D0["⚡ Query Optimization<br/>query_optimizer.py<br/>(optional)"]
-    C -->|Dual-Stage| D0
-    
-    D0 -->|Optimized Query| E["📚 Multi-Source Retrieval"]
-    
-    E --> E1["🔍 Local: Vector Search<br/>vectorstore.py"]
-    E --> E2["🌐 ArXiv: API Search<br/>retrieval_manager.py"]
-    E --> E3["🌍 Web: Tavily Search<br/>Tavily API"]
-    
-    E1 --> F["✂️ Merge & Deduplicate<br/>retrieval_manager.py"]
-    E2 --> F
-    E3 --> F
-    
-    F -->|Top-K Initial| G["📊 Rerank Results<br/>reranker.py"]
-    G -->|Top-K Final| H["📄 Chunk Processing<br/>loader.py"]
-    
-    H -->|Context| I{Single-LLM<br/>or<br/>Dual-LLM?}
-    
-    I -->|Single-Stage| J["⚡ Direct Synthesis<br/>synthesis.py"]
-    I -->|Dual-Stage| K["🧠 Stage 1: Reasoning<br/>reasoning.py"]
-    
-    K -->|Deep Analysis| L["✅ Validate & Extract<br/>reasoning_validator.py"]
-    L -->|Analysis + Sources| J
-    
-    J -->|Report + Extract<br/>References| M["📋 Final Report<br/>with Citations"]
-    
-    M -->|Validate Quality| N["✅ Validate Synthesis<br/>synthesis_validator.py"]
-    N -->|Validated Report| O["💾 Save Report<br/>report_manager.py"]
-    
-    O -->|Show Results| B
-    B -->|Display| A
-    
-    P["⚙️ Config<br/>settings.py"] -.->|Parameters| B
-    P -.->|Model Paths| K
-    P -.->|Model Paths| J
-    P -.->|Retrieval Settings| E
-    
-    style A fill:#e1f5ff
-    style B fill:#fff3e0
-    style D0 fill:#f0f4ff
-    style E fill:#e8f5e9
-    style F fill:#e8f5e9
-    style G fill:#e8f5e9
-    style H fill:#e8f5e9
-    style J fill:#f3e5f5
-    style K fill:#f3e5f5
-    style L fill:#fce4ec
-    style M fill:#fce4ec
-    style N fill:#fce4ec
-    style O fill:#e0f2f1
-    style P fill:#ede7f6
-```
-
-### Data Flow Summary
-
-**Query → Optimization → Multi-Source Retrieval → Processing → Validation → Storage → Display**
-
-1. **Input**: User enters research query in Gradio UI
-2. **Query Optimization** (optional):
-   - LLM-based query refinement via `query_optimizer.py` (if enabled)
-   - Improves retrieval accuracy before search
-3. **Multi-Source Retrieval** (parallel):
-   - Local documents: Vector similarity search (FAISS)
-   - ArXiv: Direct API search
-   - Web: Tavily Search API
-   - Results deduplicated and merged by `retrieval_manager.py`
-4. **Result Refinement**:
-   - Cross-encoder reranking for quality ranking
-   - Top-K filtering (top_k_initial → top_k_final)
-   - Chunk processing and contextualization
-5. **Processing Pipeline**:
-   - **Dual-LLM Mode**: 
-     - Stage 1: Deep reasoning analysis via `reasoning.py` (with retry loop)
-     - Validation and source extraction via `reasoning_validator.py`
-     - Stage 2: Synthesis into polished report via `synthesis.py`
-   - **Single-LLM Mode**: Direct synthesis via `synthesis.py` (faster)
-6. **Reference Handling**:
-   - Sources extracted during reasoning validation (Dual-LLM) or synthesis (both modes)
-   - References embedded in final report with citations
-7. **Validation**:
-   - Final report quality validated via `synthesis_validator.py`
-   - Ensures accuracy and source grounding
-8. **Storage & Display**: 
-   - Report saved to `./reports/` with metadata via `report_manager.py`
-   - JSON format with query, results, and references
-   - Results displayed in UI chat interface
-   - Previous reports accessible in Reports tab
 
 ---
 

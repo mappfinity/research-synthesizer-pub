@@ -44,149 +44,58 @@ A lightweight, extensible research-assistant framework that combines deep analyt
 
 ```mermaid
 graph TB
-    START["🚀 ResearchSynthesizer<br/>query | use_docs | use_arxiv | use_web"] --> WF["WorkflowManager<br/>Orchestrate Pipeline"]
+    START["🚀 ResearchSynthesizer<br/>query | use_docs | use_arxiv | use_web"] --> WF["WorkflowManager"]
     
     WF --> ROUTE{{"Source<br/>Selection"}}
     
     %% DOCUMENT PATH
-    ROUTE -->|use_docs| DOC_SCAN["DocumentIndexer<br/>scan_for_new_documents"]
-    DOC_SCAN --> FILE_SIG["Generate Signature<br/>hash(name:size:mtime)"]
-    FILE_SIG --> CHECK_IDX{{"Already<br/>Indexed?"}}
-    
-    CHECK_IDX -->|No| EXTRACT["Extract & Split<br/>PyPDF2 | TXT | MD<br/>chunk_size=512, overlap=50"]
-    CHECK_IDX -->|Yes| LOAD_EXIST["Load Existing Index"]
-    
-    EXTRACT --> CLASSIFY["SourceTypeClassifier<br/>book | paper | web"]
-    CLASSIFY --> BATCH["Batch Processing<br/>batch_size=32, workers=4"]
-    
-    BATCH --> CACHE_CHECK{{"Cache<br/>Hit?"}}
-    CACHE_CHECK -->|Yes| LOAD_CACHE["Load from SQLite<br/>~1ms/doc"]
-    CACHE_CHECK -->|No| COMPUTE_EMB["Compute Embeddings<br/>HuggingFace<br/>~50-200ms/doc"]
-    
-    COMPUTE_EMB --> SAVE_CACHE["EmbeddingsCacheManager<br/>save_batch"]
-    SAVE_CACHE --> ACCUM["Accumulate<br/>embeddings N×384"]
-    LOAD_CACHE --> ACCUM
-    
-    ACCUM --> DUAL["DualVectorStoreManager<br/>route books | papers"]
-    DUAL --> FAISS_SAVE["FAISS Save<br/>books.faiss | papers.faiss"]
-    LOAD_EXIST --> FAISS_SAVE
+    ROUTE -->|use_docs| DOC_SCAN["DocumentIndexer<br/>Scan & Classify"]
+    DOC_SCAN --> DOC_CACHE["EmbeddingsCacheManager<br/>Cache hit: ~1ms | Miss: ~100ms"]
+    DOC_CACHE --> DOC_DUAL["DualVectorStoreManager<br/>Books | Papers indices"]
+    DOC_DUAL --> DOC_FAISS["FAISS Save"]
     
     %% ARXIV PATH
-    ROUTE -->|use_arxiv| ARXIV_OPT["QueryOptimizer<br/>LLM refine"]
-    ARXIV_OPT --> ARXIV_API["ArXiv API<br/>semantic search"]
-    ARXIV_API --> ARXIV_PDF{{"Fetch<br/>PDF?"}}
-    
-    ARXIV_PDF -->|Yes| DL_ARXIV["AsyncPDFTitleEnhancer<br/>download & extract"]
-    ARXIV_PDF -->|No| SKIP_ARXIV["Use metadata only"]
-    
-    DL_ARXIV --> ARXIV_EMBED["Embed to VectorStore"]
-    SKIP_ARXIV --> ARXIV_EMBED
+    ROUTE -->|use_arxiv| ARXIV_OPT["QueryOptimizer"]
+    ARXIV_OPT --> ARXIV_API["ArXiv API Search"]
+    ARXIV_API --> ARXIV_PDF["AsyncPDFTitleEnhancer<br/>Optional PDF fetch"]
+    ARXIV_PDF --> ARXIV_EMBED["Embed Results"]
     
     %% WEB PATH
-    ROUTE -->|use_web| WEB_OPT["QueryOptimizer<br/>LLM refine"]
-    WEB_OPT --> TAVILY["Tavily API<br/>web search"]
-    TAVILY --> WEB_FILTER["WebPDFEmbedder<br/>filter_high_relevance<br/>threshold=0.5"]
+    ROUTE -->|use_web| WEB_OPT["QueryOptimizer"]
+    WEB_OPT --> TAVILY["Tavily API Search"]
+    TAVILY --> WEB_FILTER["WebPDFEmbedder<br/>Filter relevance > 0.5"]
+    WEB_FILTER --> PDF_MGR["PDFManager<br/>Cache & download"]
+    PDF_MGR --> WEB_EMBED["Embed Results"]
     
-    WEB_FILTER --> PDF_CHECK{{"URL is<br/>PDF?"}}
-    PDF_CHECK -->|Yes| PDF_CACHE{{"Cached?"}}
-    PDF_CHECK -->|No| WEB_SNIPPET["Use snippet"]
+    %% CONVERGENCE & SEARCH
+    DOC_FAISS --> SEARCH["RetrievalManager<br/>Search all indices"]
+    ARXIV_EMBED --> SEARCH
+    WEB_EMBED --> SEARCH
     
-    PDF_CACHE -->|Yes| USE_CACHE["PDFManager<br/>get_cached_pdf"]
-    PDF_CACHE -->|No| DL_PDF["PDFManager<br/>download & hash"]
+    SEARCH --> COMBINE["Combine & Deduplicate"]
+    COMBINE --> RERANK["DocumentReranker<br/>Cross-encoder + weights<br/>book=1.0 | arxiv=0.95 | web=0.7"]
+    RERANK --> TOP_K["Top-K Selection<br/>max=50, max_chars=100k"]
     
-    USE_CACHE --> WEB_EMBED["WebPDFEmbedder<br/>embed_batch"]
-    DL_PDF --> WEB_EMBED
-    WEB_SNIPPET --> WEB_EMBED
-    
-    %% CONVERGENCE
-    FAISS_SAVE --> SEARCH_READY["All Indices Ready"]
-    ARXIV_EMBED --> SEARCH_READY
-    WEB_EMBED --> SEARCH_READY
-    
-    SEARCH_READY --> QUERY_OPT{{"Query<br/>Optimization?"}}
-    QUERY_OPT -->|Yes| LLM_QUERY["QueryOptimizer<br/>LLM refine"]
-    QUERY_OPT -->|No| RAW_QUERY["Use raw query"]
-    
-    LLM_QUERY --> SEARCH["RetrievalManager<br/>search_all_indexes"]
-    RAW_QUERY --> SEARCH
-    
-    SEARCH --> FAISS_SEARCH["FAISS Search<br/>k=top_k_initial"]
-    FAISS_SEARCH --> COMBINE["Combine & Deduplicate<br/>books+papers+arxiv+web"]
-    
-    %% RERANKING
-    COMBINE --> RERANK["DocumentReranker<br/>cross-encoder scoring"]
-    RERANK --> WEIGHTS["Apply Source Weights<br/>book=1.0 | arxiv=0.95 | web=0.7"]
-    WEIGHTS --> SORT["Sort & Truncate<br/>top_k=50, max_chars=100k"]
-    
-    %% REASONING
-    SORT --> REASON_CTRL["ReasoningController<br/>reason_with_retry"]
-    REASON_CTRL --> RETRY_INIT["Initialize<br/>retries=0, max=3"]
-    
-    RETRY_INIT --> REASON_ENG["ReasoningEngine<br/>analyze_structured_prose"]
-    REASON_ENG --> BUILD_PROMPT["Build Prompt<br/>expert researcher + top_k docs"]
-    
-    BUILD_PROMPT --> HAS_FB{{"Has<br/>Feedback?"}}
-    HAS_FB -->|Yes| ADD_FB["Append feedback<br/>from validator"]
-    HAS_FB -->|No| CALL_REASON["Call LLM<br/>temp=0.7"]
-    ADD_FB --> CALL_REASON
-    
-    CALL_REASON --> VAL_REASON["ReasoningOutputValidator<br/>validate prose"]
-    VAL_REASON --> CHK_FIELDS["Check Fields<br/>claims | evidence | sources"]
-    
-    CHK_FIELDS -->|Invalid| VAL_FAIL["Validation Failed"]
-    CHK_FIELDS -->|Valid| VAL_SRC["SourceValidator<br/>check citations [1][2]..."]
-    
-    VAL_SRC -->|Missing refs| HARD_REJECT{{"hard_reject?"}}
-    VAL_SRC -->|Valid| REASON_VALID["✅ Reasoning Valid"]
-    
-    VAL_FAIL --> GEN_FB["Generate Feedback"]
-    HARD_REJECT -->|Yes| GEN_FB
-    HARD_REJECT -->|No| REASON_VALID
-    
-    GEN_FB --> RETRY_CHK{{"Retries<br/>Left?"}}
-    RETRY_CHK -->|Yes| INC_RETRY["retries += 1"]
-    RETRY_CHK -->|No| FALLBACK["Use fallback"]
-    
-    INC_RETRY --> REASON_ENG
-    FALLBACK --> REASON_VALID
+    %% REASONING WITH RETRY
+    TOP_K --> REASON["ReasoningEngine<br/>LLM analysis (temp=0.7)"]
+    REASON --> VAL_REASON["Validation<br/>Schema + Citations"]
+    VAL_REASON -->|invalid| RETRY{{"Retry?<br/>max=3"}}
+    RETRY -->|yes| REASON
+    RETRY -->|no| REASON_OK["✅ Reasoning Complete"]
+    VAL_REASON -->|valid| REASON_OK
     
     %% SYNTHESIS
-    REASON_VALID --> SYNTH_ENG["SynthesisEngine<br/>synthesize"]
-    SYNTH_ENG --> SYNTH_MODE{{"Mode"}}
-    
-    SYNTH_MODE -->|Single| SYNTH_SINGLE["synthesize_single_stage"]
-    SYNTH_MODE -->|JSON| SYNTH_JSON["synthesize_two_stage_from_json"]
-    SYNTH_MODE -->|Prose| SYNTH_PROSE["synthesize_two_stage_from_prose"]
-    
-    SYNTH_SINGLE --> BUILD_SYNTH["Build Synthesis Prompt<br/>docs + instructions"]
-    SYNTH_JSON --> BUILD_SYNTH
-    SYNTH_PROSE --> BUILD_SYNTH
-    
-    BUILD_SYNTH --> CALL_SYNTH["Call LLM<br/>temp=0.3"]
-    CALL_SYNTH --> EXTRACT_REF["Extract & Remove<br/>References Section"]
-    
-    EXTRACT_REF --> VAL_SYNTH["SynthesisOutputValidator<br/>validate report"]
-    VAL_SYNTH --> CHK_SECTIONS["Check Sections<br/>threshold=0.7"]
-    
-    CHK_SECTIONS -->|Invalid| SYNTH_RETRY{{"Retry?"}}
-    CHK_SECTIONS -->|Valid| SYNTH_VALID["✅ Synthesis Valid"]
-    
-    SYNTH_RETRY -->|Yes| CALL_SYNTH
-    SYNTH_RETRY -->|No| SYNTH_VALID
+    REASON_OK --> SYNTH["SynthesisEngine<br/>LLM generation (temp=0.3)"]
+    SYNTH --> VAL_SYNTH["Validation<br/>Section check"]
+    VAL_SYNTH -->|invalid| SYNTH_RETRY{{"Retry?"}}
+    SYNTH_RETRY -->|yes| SYNTH
+    SYNTH_RETRY -->|no| SYNTH_OK["✅ Synthesis Complete"]
+    VAL_SYNTH -->|valid| SYNTH_OK
     
     %% OUTPUT
-    SYNTH_VALID --> FORMAT{{"Output<br/>Format"}}
-    FORMAT -->|markdown| MD_OUT["Format Markdown"]
-    FORMAT -->|pdf| PDF_OUT["Render PDF"]
-    FORMAT -->|json| JSON_OUT["Structure JSON"]
-    
-    MD_OUT --> SAVE_REPORT["ReportManager<br/>save to reports/YYYY-MM-DD/HH-MM-SS"]
-    PDF_OUT --> SAVE_REPORT
-    JSON_OUT --> SAVE_REPORT
-    
-    SAVE_REPORT --> WRITE_META["Write metadata.json"]
-    WRITE_META --> CLEANUP["Cleanup<br/>close LLM | flush caches"]
-    CLEANUP --> DONE["✅ Complete<br/>10-30s typical"]
+    SYNTH_OK --> FORMAT{{"Format"}}
+    FORMAT --> OUTPUT["ReportManager<br/>Save to reports/YYYY-MM-DD/HH-MM-SS"]
+    OUTPUT --> DONE["✅ Complete (10-30s)"]
     
     classDef entry fill:#1A237E,stroke:#0D47A1,color:#FFF,stroke-width:3px,font-weight:bold
     classDef orchestrator fill:#1565C0,stroke:#0D47A1,color:#FFF,stroke-width:2px
@@ -199,14 +108,14 @@ graph TB
     classDef success fill:#2E7D32,stroke:#1B5E20,color:#FFF,stroke-width:3px
     
     class START,DONE entry
-    class WF,REASON_CTRL,SYNTH_ENG,SAVE_REPORT orchestrator
-    class DOC_SCAN,EXTRACT,BATCH,RERANK,WEIGHTS,SORT processor
-    class CALL_REASON,CALL_SYNTH,COMPUTE_EMB llm
-    class FAISS_SAVE,ACCUM,DUAL,LOAD_CACHE,SAVE_CACHE storage
-    class ARXIV_API,TAVILY,DL_ARXIV,DL_PDF api
-    class VAL_REASON,VAL_SRC,VAL_SYNTH,CHK_FIELDS,CHK_SECTIONS validator
-    class ROUTE,CHECK_IDX,CACHE_CHECK,ARXIV_PDF,PDF_CHECK,PDF_CACHE,QUERY_OPT,HAS_FB,HARD_REJECT,RETRY_CHK,SYNTH_MODE,SYNTH_RETRY,FORMAT decision
-    class REASON_VALID,SYNTH_VALID success
+    class WF,OUTPUT orchestrator
+    class DOC_SCAN,COMBINE,RERANK,TOP_K processor
+    class REASON,SYNTH llm
+    class DOC_FAISS,DOC_DUAL,DOC_CACHE,ARXIV_EMBED,WEB_EMBED storage
+    class ARXIV_API,TAVILY,ARXIV_PDF,PDF_MGR api
+    class VAL_REASON,VAL_SYNTH validator
+    class ROUTE,RETRY,SYNTH_RETRY,FORMAT decision
+    class REASON_OK,SYNTH_OK success
 ```
 ---
 

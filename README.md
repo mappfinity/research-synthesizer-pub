@@ -47,94 +47,44 @@ graph TB
     START["🚀 ResearchSynthesizer"] --> CONFIG["Config Load"]
     CONFIG --> ROUTE{{"Source Selection"}}
     
-    %% RETRIEVAL LAYER
-    subgraph RETRIEVAL["📚 Layer 1: Document Retrieval"]
-        DOC["Documents<br/>Index & Embed"]
-        ARXIV["ArXiv<br/>API Search"]
-        WEB["Web<br/>Tavily + PDF"]
-    end
-    
-    ROUTE -->|docs| DOC
-    ROUTE -->|arxiv| ARXIV
-    ROUTE -->|web| WEB
+    ROUTE -->|docs| DOC["Documents<br/>Index & Embed"]
+    ROUTE -->|arxiv| ARXIV["ArXiv<br/>API Search"]
+    ROUTE -->|web| WEB["Web<br/>Tavily + PDF"]
     
     DOC --> VECTOR["Vector Store<br/>FAISS + Cache"]
     ARXIV --> VECTOR
     WEB --> VECTOR
     
-    %% SEARCH & RANK
-    subgraph SEARCH["🔍 Layer 2: Search & Ranking"]
-        OPT["Query Optimization"]
-        SEM["Semantic Search"]
-        RERANK["Cross-Encoder<br/>Reranking"]
-    end
+    VECTOR --> OPT["Query Optimization"]
+    OPT --> SEM["Semantic Search"]
+    SEM --> RERANK["Cross-Encoder Reranking"]
     
-    VECTOR --> OPT
-    OPT --> SEM
-    SEM --> RERANK
-    
-    %% REASONING
-    subgraph REASON["🧠 Layer 3: AI Reasoning"]
-        ENGINE["LLM Analysis"]
-        VALIDATE["Schema + Citation<br/>Validation"]
-        RETRY["Retry Logic<br/>(max 3)"]
-    end
-    
-    RERANK --> ENGINE
-    ENGINE --> VALIDATE
-    VALIDATE -->|invalid| RETRY
+    RERANK --> ENGINE["LLM Analysis"]
+    ENGINE --> VALIDATE["Schema + Citation Validation"]
+    VALIDATE -->|invalid| RETRY["Retry (max 3)"]
     RETRY --> ENGINE
-    VALIDATE -->|valid| SYNTH_START
+    VALIDATE -->|valid| MODE{{"Single/Two-Stage"}}
     
-    %% SYNTHESIS
-    subgraph SYNTHESIS["✍️ Layer 4: Report Synthesis"]
-        MODE{{"Single/Two-Stage"}}
-        GEN["LLM Generation<br/>(temp=0.3)"]
-        VAL["Output Validation"]
-    end
-    
-    SYNTH_START --> MODE
-    MODE --> GEN
-    GEN --> VAL
+    MODE --> GEN["LLM Generation<br/>temp=0.3"]
+    GEN --> VAL["Output Validation"]
     VAL -->|retry| GEN
     
-    %% OUTPUT
-    subgraph OUTPUT["📄 Layer 5: Output"]
-        FMT{{"Format"}}
-        MD["Markdown"]
-        PDF["PDF"]
-        JSON["JSON"]
-    end
+    VAL -->|valid| FMT{{"Format"}}
+    FMT --> MD["Markdown"]
+    FMT --> PDF["PDF"]
+    FMT --> JSON["JSON"]
     
-    VAL -->|valid| FMT
-    FMT --> MD
-    FMT --> PDF
-    FMT --> JSON
-    
-    MD --> DONE["✅ Complete<br/>10-30s"]
+    MD --> DONE["✅ Complete (10-30s)"]
     PDF --> DONE
     JSON --> DONE
     
-    %% STYLING
-    classDef entry fill:#2D3E50,stroke:#1A252F,color:#ECF0F1,stroke-width:3px,font-weight:bold
-    classDef retrieval fill:#3498DB,stroke:#2980B9,color:#FFF,stroke-width:2px
-    classDef search fill:#9B59B6,stroke:#8E44AD,color:#FFF,stroke-width:2px
-    classDef reasoning fill:#E67E22,stroke:#D35400,color:#FFF,stroke-width:2px
-    classDef synthesis fill:#16A085,stroke:#138D75,color:#FFF,stroke-width:2px
-    classDef output fill:#27AE60,stroke:#229954,color:#FFF,stroke-width:2px
+    classDef primary fill:#2C3E50,stroke:#34495E,color:#ECF0F1,stroke-width:2px
+    classDef process fill:#3498DB,stroke:#2980B9,color:#FFF,stroke-width:2px
     classDef decision fill:#95A5A6,stroke:#7F8C8D,color:#2C3E50,stroke-width:2px
-    classDef storage fill:#34495E,stroke:#2C3E50,color:#ECF0F1,stroke-width:2px
-    classDef success fill:#1ABC9C,stroke:#16A085,color:#FFF,stroke-width:3px
     
-    class START,CONFIG entry
-    class DOC,ARXIV,WEB retrieval
-    class OPT,SEM,RERANK search
-    class ENGINE,VALIDATE,RETRY reasoning
-    class MODE,GEN,VAL synthesis
-    class MD,PDF,JSON output
-    class ROUTE,FMT decision
-    class VECTOR storage
-    class DONE success
+    class START,DONE primary
+    class CONFIG,DOC,ARXIV,WEB,VECTOR,OPT,SEM,RERANK,ENGINE,VALIDATE,RETRY,GEN,VAL,MD,PDF,JSON process
+    class ROUTE,MODE,FMT decision
 ```
 ---
 

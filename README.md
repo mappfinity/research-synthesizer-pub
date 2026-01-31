@@ -8,6 +8,10 @@ A lightweight, extensible research-assistant framework that combines deep analyt
 
 ---
 
+![My Picture](img/ui.png)
+
+---
+
 ## ✨ Why Research Synthesizer?
 
 ### 🚀 **Speed & Responsiveness**

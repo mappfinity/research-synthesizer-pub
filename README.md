@@ -44,58 +44,120 @@ A lightweight, extensible research-assistant framework that combines deep analyt
 
 ```mermaid
 graph TD
-    START["🚀 User Query"] --> SYNTH["ResearchSynthesizer<br/>Main Orchestrator"]
+    START["🚀 ResearchSynthesizer<br/>Query Entry Point"] --> CONFIG["Load Config<br/>from YAML"]
+    CONFIG --> CREATE_STATE["ResearchState<br/>Empty Containers"]
     
-    SYNTH --> STATE["ResearchState<br/>Initialize"]
-    STATE --> WF["WorkflowManager<br/>Execute Workflow"]
+    CREATE_STATE --> WF["WorkflowManager<br/>Orchestrate Pipeline"]
     
-    WF --> ROUTE{{"Route<br/>Sources"}}
+    WF --> ROUTE{{"Routing Layer<br/>documents|arxiv|web"}}
     
-    ROUTE -->|Docs| DOC["📚 Document<br/>IndexingManager"]
-    ROUTE -->|ArXiv| ARXIV["📜 ArXiv<br/>RetrievalManager"]
-    ROUTE -->|Web| WEB["🌐 Web<br/>RetrievalManager"]
+    %% ========== DOCUMENT RETRIEVAL LAYER ==========
+    ROUTE -->|use_docs| DOC_START["📚 Layer 2A: Document Indexing"]
     
-    DOC --> SCAN["DocumentIndexer<br/>scan & load"]
-    SCAN --> EMBED_D["EmbeddingsCacheManager<br/>cache→compute"]
-    EMBED_D --> VS["VectorStoreManager<br/>FAISS storage"]
+    DOC_START --> IDX_MGR["IndexingManager<br/>Coordinate indexing"]
+    IDX_MGR --> SCAN["DocumentIndexer<br/>scan_for_new_documents"]
     
-    ARXIV --> ARXIV_API["QueryOptimizer<br/>ArXiv search"]
-    ARXIV_API --> EMBED_A["Embed results<br/>add to FAISS"]
+    SCAN --> CLASS["SourceTypeClassifier<br/>Detect book vs paper"]
+    CLASS --> CHUNK["DocumentIndexer<br/>load_and_split_documents"]
     
-    WEB --> WEB_API["QueryOptimizer<br/>Tavily search"]
-    WEB_API --> PDF["PDFManager<br/>cache PDFs"]
-    PDF --> EMBED_W["Embed PDFs<br/>add to FAISS"]
+    CHUNK --> EMBED_DOC["Embedding Pipeline<br/>cache→compute→store"]
+    EMBED_DOC --> CACHE_MGR["EmbeddingsCacheManager<br/>hit rate: 60-80%"]
     
-    VS --> SEARCH["RetrievalManager<br/>search_all_indexes"]
-    EMBED_A --> SEARCH
-    EMBED_W --> SEARCH
+    CACHE_MGR --> VS_MGR["VectorStoreManager<br/>route to FAISS"]
+    VS_MGR --> DUAL["DualVectorStoreManager<br/>books & papers indices"]
     
-    SEARCH --> RERANK["DocumentReranker<br/>score & rerank<br/>SourceTypeClassifier"]
+    DUAL --> DOC_SAVE["FAISS Save<br/>disk persistence"]
     
-    RERANK --> TOP_K["Top-K Results<br/>deduped & truncated"]
+    %% ========== ARXIV RETRIEVAL LAYER ==========
+    ROUTE -->|use_arxiv| ARXIV_START["📜 Layer 2B: ArXiv Search"]
     
-    TOP_K --> REASON["ReasoningController<br/>LLM analysis<br/>with retry"]
+    ARXIV_START --> ARXIV_QUERY["RetrievalManager<br/>search_arxiv"]
+    ARXIV_QUERY --> ARXIV_OPT["QueryOptimizer<br/>refine query"]
     
-    REASON --> VALIDATE_R["ReasoningOutputValidator<br/>SourceValidator<br/>schema + citation check"]
+    ARXIV_OPT --> ARXIV_API["ArXiv API<br/>semantic search"]
+    ARXIV_API --> ARXIV_PDF["AsyncPDFTitleEnhancer<br/>optional PDF fetch"]
     
-    VALIDATE_R -->|Valid| VALID["✅ Valid"]
-    VALIDATE_R -->|Retry| REASON
+    ARXIV_PDF --> ARXIV_EMBED["Embed to VectorStore<br/>same pipeline"]
     
-    VALID --> SYNTH_E["SynthesisEngine<br/>generate report<br/>single or two-stage"]
+    %% ========== WEB RETRIEVAL LAYER ==========
+    ROUTE -->|use_web| WEB_START["🌐 Layer 2C: Web Search"]
     
-    SYNTH_E --> VALIDATE_S["SynthesisOutputValidator<br/>final validation"]
+    WEB_START --> WEB_QUERY["RetrievalManager<br/>search_web"]
+    WEB_QUERY --> TAVILY["Tavily API<br/>semantic search"]
     
-    VALIDATE_S --> FORMAT{{"Output<br/>Format"}}
+    TAVILY --> WEB_FILTER["WebPDFEmbedder<br/>filter_high_relevance"]
+    WEB_FILTER --> PDF_MGR["PDFManager<br/>cache & download"]
     
-    FORMAT -->|Markdown| MD["Format<br/>Markdown"]
-    FORMAT -->|PDF| PDF2["Format<br/>PDF"]
-    FORMAT -->|JSON| JSON["Format<br/>JSON"]
+    PDF_MGR --> WEB_EMBED["Embed PDFs<br/>to VectorStore"]
     
-    MD --> REPORT["ReportManager<br/>save report"]
-    PDF2 --> REPORT
-    JSON --> REPORT
+    %% ========== LAYER 3: SEARCH & RANKING ==========
+    DOC_SAVE --> SEARCH_L["Layer 3: Search & Ranking"]
+    ARXIV_EMBED --> SEARCH_L
+    WEB_EMBED --> SEARCH_L
     
-    REPORT --> DONE["✅ Return<br/>ResearchState"]
+    SEARCH_L --> OPT_CHECK{{"Query<br/>Optimization?"}}
+    OPT_CHECK -->|use_llm| OPT["QueryOptimizer<br/>LLM refine"]
+    OPT_CHECK -->|No| DIRECT["Use raw query"]
+    
+    OPT --> SEMANTIC["RetrievalManager<br/>search_all_indexes"]
+    DIRECT --> SEMANTIC
+    
+    SEMANTIC --> COMBINE["Combine all results<br/>deduplicate"]
+    COMBINE --> RERANK["DocumentReranker<br/>cross-encoder scoring"]
+    
+    RERANK --> WEIGHT["SourceTypeClassifier<br/>apply weights<br/>book>arxiv>web"]
+    
+    WEIGHT --> SORT["Sort & Truncate<br/>top-K final"]
+    
+    %% ========== LAYER 4: REASONING PIPELINE ==========
+    SORT --> REASON_L["Layer 4: Reasoning with Retry"]
+    
+    REASON_L --> REASON_C["ReasoningController<br/>coordinate with retry"]
+    REASON_C --> REASON_INIT["max_retries=3<br/>feedback=None"]
+    
+    REASON_INIT --> REASON_LOOP["Retry Loop"]
+    REASON_LOOP --> ENGINE["ReasoningEngine<br/>LLM analysis"]
+    
+    ENGINE --> VALIDATE["ReasoningOutputValidator<br/>schema check"]
+    VALIDATE --> VALIDATE_SRC["SourceValidator<br/>citation check"]
+    
+    VALIDATE_SRC -->|Valid| REASON_OK["✅ Reasoning Complete"]
+    VALIDATE_SRC -->|Invalid| FEEDBACK["ReasoningController<br/>generate feedback"]
+    
+    FEEDBACK --> RETRIES{{"Retries<br/>Remaining?"}}
+    RETRIES -->|Yes| ENGINE
+    RETRIES -->|No| REASON_OK
+    
+    %% ========== LAYER 5: SYNTHESIS PIPELINE ==========
+    REASON_OK --> SYNTH_L["Layer 5: Synthesis Pipeline"]
+    
+    SYNTH_L --> MODE_SELECT{{"Synthesis<br/>Mode"}}
+    
+    MODE_SELECT -->|Single| SINGLE["SynthesisEngine<br/>direct generation"]
+    MODE_SELECT -->|Two-Stage| TWO["SynthesisEngine<br/>reasoning→report"]
+    
+    SINGLE --> SYNTH_CALL["Call LLM<br/>temp=0.3"]
+    TWO --> SYNTH_CALL
+    
+    SYNTH_CALL --> SYNTH_VAL["SynthesisOutputValidator<br/>section check"]
+    SYNTH_VAL -->|Valid| SYNTH_OK["✅ Synthesis Valid"]
+    SYNTH_VAL -->|Invalid| SYNTH_RETRY["Retry synthesis"]
+    SYNTH_RETRY --> SYNTH_CALL
+    
+    %% ========== LAYER 6: OUTPUT & PERSISTENCE ==========
+    SYNTH_OK --> OUTPUT_L["Layer 6: Output & Persistence"]
+    
+    OUTPUT_L --> FORMAT{{"Format"}}
+    FORMAT -->|markdown| MD_FMT["Format Markdown"]
+    FORMAT -->|pdf| PDF_FMT["Render PDF"]
+    FORMAT -->|json| JSON_FMT["Structure JSON"]
+    
+    MD_FMT --> SAVE_L["ReportManager<br/>create reports/"]
+    PDF_FMT --> SAVE_L
+    JSON_FMT --> SAVE_L
+    
+    SAVE_L --> RETURN_STATE["Return ResearchState<br/>all fields populated"]
+    RETURN_STATE --> DONE["✅ Complete<br/>10-30s typical"]
     
     classDef orchestrator fill:#FF6B6B,stroke:#333,color:#fff,stroke-width:3px,font-weight:bold
     classDef manager fill:#4ECDC4,stroke:#333,color:#fff,stroke-width:2px
@@ -106,15 +168,15 @@ graph TD
     classDef decision fill:#E8D5C4,stroke:#333,color:#000,stroke-width:2px
     classDef output fill:#DDA15E,stroke:#333,color:#fff,stroke-width:2px
     
-    class SYNTH,REASON,SYNTH_E,REPORT orchestrator
-    class WF,RERANK,DOC,ARXIV,WEB manager
-    class VALIDATE_R,VALIDATE_S validator
-    class VS,EMBED_D,EMBED_A,EMBED_W storage
-    class ARXIV_API,WEB_API external
-    class ROUTE,FORMAT decision
+    class START,WF,REASON_C,SYNTH_OK,OUTPUT_L orchestrator
+    class IDX_MGR,VS_MGR,DUAL,RERANK,REASON_L,SYNTH_L manager
+    class ENGINE,WEIGHT,SYNTH_CALL processor
+    class VALIDATE,VALIDATE_SRC,SYNTH_VAL validator
+    class CACHE_MGR,DOC_SAVE,DUAL storage
+    class ARXIV_API,TAVILY,PDF_MGR external
+    class ROUTE,OPT_CHECK,RETRIES,MODE_SELECT,FORMAT decision
     class DONE output
 ```
-
 ---
 
 ## Key Class Relationships

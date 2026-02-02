@@ -47,158 +47,150 @@ A lightweight, extensible research-assistant framework that combines deep analyt
 
 ```mermaid
 graph TB
-    START["🚀 ResearchSynthesizer<br/>query | use_docs | use_arxiv | use_web"] --> UI["UI Layer<br/>Gradio Interface"]
+    START["🚀 ResearchSynthesizer<br/>Query Input"] --> WF["WorkflowManager<br/>Orchestration"]
     
-    UI --> HANDLERS["Request Handlers<br/>research | model | validation"]
-    HANDLERS --> STATE_INIT["State Initialization<br/>ResearchState()"]
-    STATE_INIT --> WF["WorkflowManager<br/>Main Orchestration"]
-    WF --> CONFIG["Load Configuration<br/>Settings | Models | Logging"]
+    WF --> CONFIG["Configuration<br/>Settings & Models"]
     CONFIG --> ROUTE{{"Source<br/>Selection"}}
     
     %% DOCUMENT PATH
-    ROUTE -->|use_docs| DOC_CHECK{{"Existing<br/>Index?"}}
-    DOC_CHECK -->|No| DOC_SCAN["DocumentIndexer<br/>scan_for_new_documents()"]
-    DOC_CHECK -->|Yes| DOC_LOAD["Load Existing Index<br/>From disk cache"]
+    ROUTE -->|Documents| DOC_CHECK{{"Index<br/>Exists?"}}
+    DOC_CHECK -->|No| DOC_SCAN["Document Scanner<br/>Detect new files"]
+    DOC_CHECK -->|Yes| DOC_LOAD["Load Index<br/>From cache"]
     
-    DOC_SCAN --> DOC_CLASSIFY["SourceTypeClassifier<br/>classify() → BOOK | PAPER"]
-    DOC_CLASSIFY --> DOC_CHUNK["Document Chunking<br/>size:1000 | overlap:200"]
+    DOC_SCAN --> DOC_CLASSIFY["Source Classifier<br/>BOOK | PAPER"]
+    DOC_CLASSIFY --> DOC_CHUNK["Document Chunking<br/>1000 tokens"]
     DOC_CHUNK --> DOC_CACHE_CHK{{"Cache<br/>Hit?"}}
     
-    DOC_CACHE_CHK -->|"Hit ~1ms"| DOC_CACHE_LOAD["EmbeddingsCacheManager<br/>load_batch()"]
-    DOC_CACHE_CHK -->|"Miss ~100ms"| DOC_EMBED["Generate Embeddings<br/>HuggingFace | batch:32"]
+    DOC_CACHE_CHK -->|"Yes ~1ms"| DOC_CACHE_LOAD["Embeddings Cache<br/>Fast retrieval"]
+    DOC_CACHE_CHK -->|"No ~100ms"| DOC_EMBED["Generate Embeddings<br/>HuggingFace"]
     
-    DOC_EMBED --> DOC_CACHE_SAVE["Cache Embeddings<br/>save_batch()"]
+    DOC_EMBED --> DOC_CACHE_SAVE["Cache Update"]
     DOC_CACHE_SAVE --> DOC_DUAL
     DOC_CACHE_LOAD --> DOC_DUAL
     DOC_LOAD --> DOC_DUAL
     
-    DOC_DUAL["DualVectorStoreManager<br/>books_index | papers_index<br/>FAISS"]
-    DOC_DUAL --> DOC_SAVE["Save Indices<br/>books_path | papers_path"]
+    DOC_DUAL["Dual Vector Store<br/>Books & Papers<br/>FAISS"]
+    DOC_DUAL --> DOC_SAVE["Save Indices"]
     
     %% ARXIV PATH
-    ROUTE -->|use_arxiv| ARXIV_OPT["QueryOptimizer<br/>LLM-powered expansion"]
-    ARXIV_OPT --> ARXIV_API["ArXiv API Search<br/>max:50 | sort:relevance"]
-    ARXIV_API --> ARXIV_FILTER["Filter Results<br/>relevance | dedup"]
+    ROUTE -->|ArXiv| ARXIV_OPT["Query Optimizer<br/>LLM expansion"]
+    ARXIV_OPT --> ARXIV_API["ArXiv API<br/>50 results"]
+    ARXIV_API --> ARXIV_FILTER["Filter & Deduplicate"]
     ARXIV_FILTER --> ARXIV_PDF_CHK{{"Fetch<br/>PDFs?"}}
     
-    ARXIV_PDF_CHK -->|Yes| ARXIV_PDF["AsyncPDFTitleEnhancer<br/>process_queue() | async download"]
+    ARXIV_PDF_CHK -->|Yes| ARXIV_PDF["PDF Downloader<br/>Async batch"]
     ARXIV_PDF_CHK -->|No| ARXIV_EMBED
-    ARXIV_PDF --> ARXIV_PARSE["PDF Parsing<br/>Extract text | ParsedSource()"]
-    ARXIV_PARSE --> ARXIV_EMBED["Embed ArXiv Results<br/>HuggingFace | temp store"]
+    ARXIV_PDF --> ARXIV_PARSE["PDF Parser"]
+    ARXIV_PARSE --> ARXIV_EMBED["Embedding Generator"]
     
     %% WEB PATH
-    ROUTE -->|use_web| WEB_OPT["QueryOptimizer<br/>LLM-powered expansion"]
-    WEB_OPT --> TAVILY["Tavily API Search<br/>depth:advanced | max:20"]
-    TAVILY --> WEB_FILTER["WebPDFEmbedder<br/>filter relevance > 0.5"]
-    WEB_FILTER --> WEB_PDF_CHECK{{"PDF<br/>Content?"}}
+    ROUTE -->|Web| WEB_OPT["Query Optimizer<br/>LLM expansion"]
+    WEB_OPT --> TAVILY["Tavily Search<br/>20 results"]
+    TAVILY --> WEB_FILTER["Relevance Filter<br/>Threshold: 0.5"]
+    WEB_FILTER --> WEB_PDF_CHK{{"PDF<br/>Content?"}}
     
-    WEB_PDF_CHECK -->|Yes| PDF_MGR["PDFManager<br/>cache | download<br/>max:50MB | timeout:30s"]
-    WEB_PDF_CHECK -->|No| WEB_PARSE["Parse HTML<br/>extract text | clean"]
+    WEB_PDF_CHK -->|Yes| PDF_MGR["PDF Manager<br/>Download & Cache<br/>50MB limit"]
+    WEB_PDF_CHK -->|No| WEB_PARSE["HTML Parser"]
     
-    PDF_MGR --> PDF_PARSE["PDF Processing<br/>extract | ParsedSource()"]
+    PDF_MGR --> PDF_PARSE["PDF Extractor"]
     PDF_PARSE --> WEB_EMBED
     WEB_PARSE --> WEB_EMBED
-    WEB_EMBED["Embed Web Results<br/>batch download | max_concurrent:5"]
+    WEB_EMBED["Embedding Generator"]
     
-    %% SEARCH & RETRIEVAL
-    DOC_SAVE --> SEARCH["RetrievalManager<br/>search_all() k=100<br/>Books | Papers | ArXiv | Web"]
+    %% RETRIEVAL
+    DOC_SAVE --> SEARCH["Retrieval Manager<br/>Unified Search<br/>100 candidates"]
     ARXIV_EMBED --> SEARCH
     WEB_EMBED --> SEARCH
     
-    SEARCH --> COMBINE["Combine & Deduplicate<br/>Merge sources | normalize metadata"]
-    COMBINE --> WEIGHT_ADJ["Source Weight Adjustment<br/>get_query_aware_weights()"]
-    WEIGHT_ADJ --> RERANK["DocumentReranker<br/>CrossEncoder<br/>book:1.0 | paper:0.95 | web:0.7<br/>alpha:0.5 | batch:32"]
+    SEARCH --> COMBINE["Merge & Deduplicate"]
+    COMBINE --> WEIGHT_ADJ["Weight Adjustment<br/>Query-aware"]
+    WEIGHT_ADJ --> RERANK["Cross-Encoder Reranker<br/>book:1.0 | paper:0.95 | web:0.7"]
     
-    RERANK --> TOP_K["Top-K Selection<br/>max_docs:50 | max_chars:100k"]
+    RERANK --> TOP_K["Top-K Selection<br/>50 docs | 100k chars"]
     
-    %% REASONING PHASE
-    TOP_K --> REASON_CTRL["ReasoningController<br/>max_retries:3"]
-    REASON_CTRL --> REASON_MODE{{"Reasoning<br/>Mode?"}}
+    %% REASONING
+    TOP_K --> REASON_CTRL["Reasoning Controller<br/>Max retries: 3"]
+    REASON_CTRL --> REASON_MODE{{"Mode?"}}
     
-    REASON_MODE -->|Structured| REASON_STRUCT["ReasoningEngine<br/>LLM:ChatOllama | temp:0.7<br/>Output:JSON<br/>claims | evidence | comparisons"]
-    REASON_MODE -->|Prose| REASON_PROSE["ReasoningEngine<br/>LLM:ChatOllama | temp:0.7<br/>Output:Prose | natural language"]
+    REASON_MODE -->|Structured| REASON_STRUCT["Reasoning Engine<br/>JSON Output<br/>temp: 0.7"]
+    REASON_MODE -->|Prose| REASON_PROSE["Reasoning Engine<br/>Prose Output<br/>temp: 0.7"]
     
-    REASON_STRUCT --> VAL_STRUCT["StructuredReasoningValidator<br/>schema | sources | evidence quality"]
-    REASON_PROSE --> VAL_PROSE["ReasoningOutputValidator<br/>citations | sections | source counts"]
+    REASON_STRUCT --> VAL_STRUCT["Structured Validator<br/>Schema & Citations"]
+    REASON_PROSE --> VAL_PROSE["Prose Validator<br/>Format & Sources"]
     
     VAL_STRUCT --> VAL_CHECK_R{{"Valid?"}}
     VAL_PROSE --> VAL_CHECK_R
     
-    VAL_CHECK_R -->|Invalid| RETRY_R{{"Retry?"}}
-    RETRY_R -->|"< max"| FEEDBACK_R["Generate Feedback<br/>error analysis | suggestions"]
+    VAL_CHECK_R -->|No| RETRY_R{{"Retry?"}}
+    RETRY_R -->|Yes| FEEDBACK_R["Feedback Generator"]
     FEEDBACK_R --> REASON_CTRL
-    RETRY_R -->|">= max"| REASON_FAIL["⚠️ Reasoning Failed<br/>log | use best attempt"]
-    VAL_CHECK_R -->|Valid| REASON_OK["✅ Reasoning Complete<br/>reasoning_output | source_index"]
+    RETRY_R -->|No| REASON_FAIL["⚠️ Use Best Attempt"]
+    VAL_CHECK_R -->|Yes| REASON_OK["✅ Reasoning Complete"]
     REASON_FAIL --> REASON_OK
     
-    %% SYNTHESIS PHASE
-    REASON_OK --> SYNTH_CTRL["SynthesisController<br/>max_retries:3"]
-    SYNTH_CTRL --> SOURCE_VAL["Source Validation<br/>validate_sources_before_synthesis()"]
+    %% SYNTHESIS
+    REASON_OK --> SYNTH_CTRL["Synthesis Controller<br/>Max retries: 3"]
+    SYNTH_CTRL --> SOURCE_VAL["Source Validator"]
     SOURCE_VAL --> SOURCE_VAL_CHK{{"Valid?"}}
     
-    SOURCE_VAL_CHK -->|No| SOURCE_FIX["Attempt Fix<br/>remove invalid refs"]
+    SOURCE_VAL_CHK -->|No| SOURCE_FIX["Fix Invalid Sources"]
     SOURCE_VAL_CHK -->|Yes| SYNTH_MODE
     SOURCE_FIX --> SYNTH_MODE
     
-    SYNTH_MODE{{"Synthesis<br/>Strategy?"}}
-    SYNTH_MODE -->|"2-stage JSON"| SYNTH_2S_JSON["SynthesisEngine<br/>from JSON<br/>Stage 1:structure | Stage 2:prose<br/>temp:0.3"]
-    SYNTH_MODE -->|"2-stage prose"| SYNTH_2S_PROSE["SynthesisEngine<br/>from prose<br/>Stage 1:extract | Stage 2:enhance<br/>temp:0.3"]
-    SYNTH_MODE -->|single| SYNTH_SINGLE["SynthesisEngine<br/>direct generation<br/>temp:0.3"]
+    SYNTH_MODE{{"Strategy?"}}
+    SYNTH_MODE -->|"2-stage JSON"| SYNTH_2S_JSON["Synthesis Engine<br/>JSON → Report<br/>temp: 0.3"]
+    SYNTH_MODE -->|"2-stage Prose"| SYNTH_2S_PROSE["Synthesis Engine<br/>Prose → Enhanced<br/>temp: 0.3"]
+    SYNTH_MODE -->|Single| SYNTH_SINGLE["Synthesis Engine<br/>Direct Generation<br/>temp: 0.3"]
     
     SYNTH_2S_JSON --> SYNTH_FORMAT
     SYNTH_2S_PROSE --> SYNTH_FORMAT
     SYNTH_SINGLE --> SYNTH_FORMAT
     
-    SYNTH_FORMAT["Format Application<br/>style | document type"]
-    SYNTH_FORMAT --> VAL_SYNTH["SynthesisOutputValidator<br/>sections | citations<br/>sources | completeness"]
+    SYNTH_FORMAT["Style Formatter"]
+    SYNTH_FORMAT --> VAL_SYNTH["Synthesis Validator<br/>Completeness Check"]
     
     VAL_SYNTH --> VAL_CHECK_S{{"Valid?"}}
-    VAL_CHECK_S -->|Invalid| RETRY_S{{"Retry?"}}
-    RETRY_S -->|"< max"| FEEDBACK_S["Generate Feedback<br/>validation issues"]
+    VAL_CHECK_S -->|No| RETRY_S{{"Retry?"}}
+    RETRY_S -->|Yes| FEEDBACK_S["Feedback Generator"]
     FEEDBACK_S --> SYNTH_CTRL
     
-    RETRY_S -->|">= max"| SYNTH_FAIL_CHK{{"hard_reject?"}}
-    SYNTH_FAIL_CHK -->|Yes| SYNTH_REJECT["❌ Synthesis Rejected<br/>return error"]
-    SYNTH_FAIL_CHK -->|No| SYNTH_WARN["⚠️ Use Best Attempt<br/>log validation issues"]
+    RETRY_S -->|No| SYNTH_FAIL_CHK{{"Hard<br/>Reject?"}}
+    SYNTH_FAIL_CHK -->|Yes| SYNTH_REJECT["❌ Error"]
+    SYNTH_FAIL_CHK -->|No| SYNTH_WARN["⚠️ Use Best Attempt"]
     
-    VAL_CHECK_S -->|Valid| SYNTH_OK["✅ Synthesis Complete<br/>final_report generated"]
+    VAL_CHECK_S -->|Yes| SYNTH_OK["✅ Synthesis Complete"]
     SYNTH_WARN --> SYNTH_OK
     
-    %% POST-PROCESSING
-    SYNTH_OK --> CLEANUP["Post-Synthesis Cleanup<br/>format | citations | metadata"]
-    CLEANUP --> SAVE_CHECK{{"save_report?"}}
+    %% OUTPUT
+    SYNTH_OK --> CLEANUP["Cleanup & Formatting"]
+    CLEANUP --> SAVE_CHECK{{"Save?"}}
     
     SAVE_CHECK -->|Yes| FORMAT_SEL{{"Format?"}}
-    FORMAT_SEL -->|md| SAVE_MD["Save Markdown"]
-    FORMAT_SEL -->|html| SAVE_HTML["Save HTML"]
-    FORMAT_SEL -->|docx| SAVE_DOCX["Save DOCX"]
-    FORMAT_SEL -->|pdf| SAVE_PDF["Save PDF"]
+    FORMAT_SEL -->|Markdown| REPORT_MGR
+    FORMAT_SEL -->|HTML| REPORT_MGR
+    FORMAT_SEL -->|DOCX| REPORT_MGR
+    FORMAT_SEL -->|PDF| REPORT_MGR
     
-    SAVE_MD --> REPORT_MGR
-    SAVE_HTML --> REPORT_MGR
-    SAVE_DOCX --> REPORT_MGR
-    SAVE_PDF --> REPORT_MGR
-    
-    REPORT_MGR["ReportManager<br/>reports/YYYY-MM-DD/HH-MM-SS/<br/>metadata JSON"]
+    REPORT_MGR["Report Manager<br/>Timestamped Output"]
     
     SAVE_CHECK -->|No| VIZ_CHECK
     REPORT_MGR --> VIZ_CHECK
     
-    VIZ_CHECK{{"visualize?"}}
-    VIZ_CHECK -->|Yes| VIZ_GEN["Generate Visualization<br/>network | citations | sources"]
+    VIZ_CHECK{{"Visualize?"}}
+    VIZ_CHECK -->|Yes| VIZ_GEN["Visualization<br/>Network Graph"]
     VIZ_CHECK -->|No| TTS_CHECK
     VIZ_GEN --> TTS_CHECK
     
     TTS_CHECK{{"TTS?"}}
-    TTS_CHECK -->|Yes| TTS_PROCESS["TTS Processing<br/>LatexMath | Citations | Insights"]
+    TTS_CHECK -->|Yes| TTS_PROCESS["Text-to-Speech<br/>Audio Output"]
     TTS_CHECK -->|No| METRICS
     TTS_PROCESS --> METRICS
     
-    METRICS["Log Metrics<br/>time:10-30s | sources<br/>tokens | cache hits | retries"]
-    METRICS --> DONE["✅ Process Complete<br/>report | metadata | viz | audio"]
+    METRICS["Metrics Logger<br/>10-30s total"]
+    METRICS --> DONE["✅ Complete"]
     
-    SYNTH_REJECT --> ERROR_HANDLER["🔴 Error Handler<br/>log error"]
-    ERROR_HANDLER --> END_ERROR["❌ Process Failed"]
+    SYNTH_REJECT --> ERROR_HANDLER["Error Handler"]
+    ERROR_HANDLER --> END_ERROR["❌ Failed"]
     
     %% STYLING
     classDef entry fill:#1A365D,stroke:#0F2942,stroke-width:4px,color:#FFF,font-weight:bold
@@ -226,7 +218,7 @@ graph TB
     class REASON_OK,SYNTH_OK,DONE success
     class REASON_FAIL,SYNTH_WARN warning
     class SYNTH_REJECT,ERROR_HANDLER,END_ERROR error
-    class UI,HANDLERS,CONFIG,STATE_INIT,SAVE_MD,SAVE_HTML,SAVE_DOCX,SAVE_PDF,REPORT_MGR,VIZ_GEN,TTS_PROCESS,METRICS io
+    class CONFIG,SAVE_MD,SAVE_HTML,SAVE_DOCX,SAVE_PDF,REPORT_MGR,VIZ_GEN,TTS_PROCESS,METRICS io
     class DOC_CACHE_LOAD,DOC_CACHE_SAVE,DOC_EMBED,DOC_LOAD cache
 ```
 ---

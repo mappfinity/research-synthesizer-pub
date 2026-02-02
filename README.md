@@ -1,10 +1,10 @@
 # Research Synthesizer
 
-**Enterprise-grade research synthesis powered by dual-LLM reasoning + synthesis architecture**
+**Dual-LLM research synthesis with semantic retrieval and source validation**
 
-A lightweight, extensible research-assistant framework that combines deep analytical reasoning with polished report generation. Ingests local and remote documents, builds semantic vector indexes, and produces source-grounded technical outputs using configurable LLM pipelines—with optional text-to-speech playback for listening to generated reports and summaries.
+Local-first research assistant that combines deep reasoning with report generation. Ingests documents (PDF/TXT/MD), builds FAISS vector indices, and produces source-grounded outputs using configurable LLM pipelines. Optional text-to-speech for hands-free consumption.
 
-> **Perfect for:** Research teams, knowledge synthesis, competitive analysis, literature reviews, technical due diligence, rapid prototyping, and hands-free consumption of research outputs.
+> **Use cases:** Literature reviews, competitive analysis, technical due diligence, knowledge synthesis, research prototyping.
 
 ---
 ### ☀️ **UI (Light theme)**
@@ -15,34 +15,29 @@ A lightweight, extensible research-assistant framework that combines deep analyt
 
 ---
 
-## ✨ Why Research Synthesizer?
+## Why This Architecture?
 
-### 🚀 **Speed & Responsiveness**
-- **Instant UI startup** (~1-2s) with lazy model loading
-- **Metadata-based document scanning** 500-1000x faster than hash-based approaches
-- **Non-blocking operations** - UI stays responsive during indexing, reranking, synthesis
-- **Efficient batch processing** for embeddings and reranking
+**Performance**
+- Stat-based document scanning (500-1000x faster than MD5)
+- Lazy model loading (~1-2s UI startup, models load on demand)
+- SQLite embeddings cache (60-80% hit rate)
+- Async operations keep UI responsive during indexing/synthesis
+- Efficient batch processing for embeddings and reranking
 
-### 🎯 **Accuracy & Grounding**
-- **Dual-LLM architecture**: Separate reasoning (deep analysis) and synthesis (report generation) stages
-- **Source-grounded output** - Every claim traceable to original documents
-- **Multi-stage validation** - Reasoning validation + synthesis validation + quality checks
-- **Smart reranking** - Cross-encoder reranking ensures top-quality results
+**Accuracy**
+- Dual-LLM pipeline: reasoning model (analysis) → synthesis model (reports)
+- Cross-encoder reranking with source-type weighting (book:1.0, paper:0.95, web:0.7)
+- Multi-stage validation: reasoning → synthesis → quality checks
+- Citation tracking and source verification
 
-### 🔀 **Multi-Source Intelligence**
-- **Local documents** (PDF, TXT, MD) with semantic search
-- **ArXiv papers** for academic research
-- **Web search** via Tavily API for current information
-- **Automatic deduplication** across sources
+**Flexibility**
+- Multi-source retrieval: local documents + ArXiv + web search (Tavily)
+- Configurable via `config/settings.py` (no code changes needed)
+- Type-safe state management (LangGraph)
+- Modular architecture for extending sources/models
 
-### 🛠️ **Developer-Friendly**
-- **Modular architecture** - Easy to extend with new LLM providers or retrieval sources
-- **Comprehensive configuration** - Control every aspect without code changes
-- **Type-safe codebase** - Full type hints and LangGraph state management
-- **Async operations** - Background tasks don't block the UI
-- **Programmatic API** - Use as a Python library for custom workflows
-  
 ---
+
 ## Simplified High-Level System Flow
 
 ```mermaid
@@ -221,553 +216,272 @@ graph TB
     class CONFIG,SAVE_MD,SAVE_HTML,SAVE_DOCX,SAVE_PDF,REPORT_MGR,VIZ_GEN,TTS_PROCESS,METRICS io
     class DOC_CACHE_LOAD,DOC_CACHE_SAVE,DOC_EMBED,DOC_LOAD cache
 ```
+
 ---
 
-## Key Class Relationships
+## Architecture Overview
 
-### Core Orchestrators
-- **ResearchSynthesizer**: Main entry point, coordinates all components
-- **WorkflowManager**: Executes research pipeline with parallel retrieval
-- **ReasoningController**: Manages reasoning phase with retry logic
-- **SynthesisController/Engine**: Generates final reports (single or two-stage)
+### Core Components
 
-### Retrieval & Indexing
-- **IndexingManager**: Coordinates document loading and embedding
-- **DocumentIndexer**: Scans, chunks, and classifies documents
-- **RetrievalManager**: Manages ArXiv and web searches
-- **VectorStoreManager** + **DualVectorStoreManager**: FAISS indices (books/papers)
-- **EmbeddingsCacheManager**: SQLite cache with 60-80% hit rate
+**Orchestration**
+- `ResearchSynthesizer` - Main coordinator, initializes subsystems
+- `WorkflowManager` - LangGraph-based pipeline execution
+- `ReasoningController` - Manages reasoning phase with retry logic
+- `SynthesisController` - Manages synthesis phase with validation
 
-### Source Management
-- **SourceTypeClassifier**: Classifies docs as book/paper/web
-- **PDFManager**: Caches and manages PDF downloads
-- **WebPDFEmbedder**: Filters and embeds web PDFs
-- **AsyncPDFTitleEnhancer**: Enhances PDF metadata
+**Retrieval & Indexing**
+- `IndexingManager` - Coordinates document loading and embedding
+- `DocumentIndexer` - Scans/chunks/classifies documents (stat-based signatures)
+- `RetrievalManager` - Multi-source search (local, ArXiv, web)
+- `VectorStoreManager` + `DualVectorStoreManager` - FAISS indices (books/papers split)
+- `EmbeddingsCacheManager` - SQLite cache for embeddings
 
-### Search & Ranking
-- **DocumentReranker**: Cross-encoder scoring and weighting
-- **QueryOptimizer**: Refines queries (optional LLM)
+**Search & Ranking**
+- `DocumentReranker` - Cross-encoder reranking with source weighting
+- `QueryOptimizer` - LLM-based query expansion (optional)
+- `SourceTypeClassifier` - Document classification and weight assignment
 
-### Validation & Output
-- **ReasoningOutputValidator**: Validates prose reasoning
-- **SourceValidator**: Checks citation integrity
-- **SynthesisOutputValidator**: Validates report structure
-- **ReportManager**: Saves in markdown/PDF/JSON formats
+**LLM Pipeline**
+- `ReasoningEngine` - Deep analysis (structured JSON or prose)
+- `SynthesisEngine` - Report generation (single or two-stage)
+- Model registry with lazy loading
 
-### Utilities
-- **LoggerConfig**: Centralized logging
-- **MinimalCitationProcessor**: Citation formatting
-- **ReasoningCapabilityProbe**: Model capability detection
+**Validation**
+- `StructuredReasoningValidator` - Schema/citation validation
+- `ReasoningOutputValidator` - Prose format validation
+- `SynthesisOutputValidator` - Report completeness checks
+- `SourceValidator` - Citation integrity verification
+
+**I/O**
+- `ReportManager` - Multi-format output (MD, HTML, DOCX, PDF)
+- `PDFManager` - PDF caching and management
+- `WebPDFEmbedder` - Web content filtering and embedding
+
 ---
 
-## 🎬 Quick Start
-
-### 1. Install
+## Quick Start
 
 ```bash
-git clone <repository-url>
+# 1. Clone and install
+git clone <repo-url>
 cd research-synthesizer-v1
 pip install -r requirements.txt
-```
 
-### 2. Configure
+# 2. Configure models (config/settings.py)
+CONFIG = {
+    "reasoning_model": "deepseek-r1:14b",
+    "synthesis_model": "qwen3:14b",
+    "embedding_model": "BAAI/bge-base-en-v1.5",
+}
 
-Edit [config/settings.py](config/settings.py):
-```python
-"reasoning_model": "deepseek-r1:14b",      # Deep analysis
-"synthesis_model": "qwen2.5:7b-instruct",  # Report generation
-"embedding_model": "BAAI/bge-base-en-v1.5" # Semantic search
-```
-
-### 3. Run
-
-```bash
+# 3. Launch
 python main.py
-```
+# → http://127.0.0.1:7860
 
-Open browser: `http://127.0.0.1:7860`
-
-### 4. Research
-
-1. Add documents to `./research_docs/`
-2. Click "Rescan Documents" 
-3. Enter your research question
-4. Get source-grounded technical report in seconds
-
----
-
-## 🎯 Core Capabilities
-
-### Dual-LLM Architecture
-- **Reasoning Model** (Stage 1): Deep analysis and critical thinking
-- **Synthesis Model** (Stage 2): Polished report generation  
-- **Single-Stage Mode**: Direct synthesis for speed
-- **Lazy Loading**: Models initialize only on first use (instant UI startup)
-
-### Multi-Source Research
-- **Local documents**: PDF, TXT, MD with semantic search
-- **ArXiv papers**: Direct academic paper search
-- **Web search**: Current information via Tavily API
-- **Automatic deduplication** across all sources
-
-### Advanced Retrieval & Ranking
-- **FAISS vector store** with stat-based document scanning (500-1000x faster than hash-based)
-- **Semantic search** with embeddings for relevance
-- **Cross-encoder reranking** for quality ranking
-- **Batch processing** for efficiency
-- **Smart deduplication** across sources and within vectorstore
-
-### UI Features
-- **Main Tab**: Research interface with query input and mode selection
-- **Reports Tab**: Browse, load, and download previous reports
-- **Tools Tab**: Database maintenance (async, non-blocking)
-  - Rescan documents
-  - Check for duplicates
-  - Rebuild indexes
-  - Optimize cache
-  - Full database reset with backup
-- **Config Tab**: Runtime information and status
-- **Real-time progress** indicators and task status
-
----
-
-## 📖 Core Usage Workflow
-
-1. **Add Documents** 
-   - Place PDF, TXT, or MD files in `./research_docs/`
-   - Click "Rescan Documents" (runs async, non-blocking)
-
-2. **Configure Research** (Optional)
-   - Toggle Dual-LLM mode (reasoning + synthesis vs. direct synthesis)
-   - Select sources: Local Docs, ArXiv, Web
-   - Adjust temperature for creativity vs. consistency
-
-3. **Run Query**
-   - Enter research question
-   - Click "Research"
-   - First run loads models (~30-60s)
-   - Subsequent runs use cached models (much faster)
-
-4. **Review & Export**
-   - View formatted report with citations
-   - Access reasoning analysis (Dual-LLM mode)
-   - Download or browse previous reports
-
----
-
-## 📊 Project Structure
-
-```
-research-synthesizer-v1/
-├── assets/                       # UI styling
-│   └── style.css
-├── config/                       # Configuration
-│   ├── __init__.py
-│   └── settings.py               # All configurable parameters
-├── core/                         # Business logic & orchestration
-│   ├── synthesizer.py            # Main coordinator
-│   ├── state.py                  # Type-safe state management
-│   ├── workflow_manager.py        # LangGraph workflow orchestration
-│   ├── reasoning_controller.py    # Dual-LLM reasoning stage
-│   ├── reasoning_validator.py     # Reasoning output validation
-│   ├── synthesis_validator.py     # Synthesis output validation
-│   └── report_manager.py          # Report persistence
-├── llm/                          # Language model operations
-│   ├── reasoning.py              # Deep analysis LLM (Stage 1)
-│   ├── synthesis.py              # Report generation LLM (Stage 2)
-│   └── query_optimizer.py         # Query refinement (optional)
-├── retrieval/                    # Document management & search
-│   ├── loader.py                 # Document loading and chunking
-│   ├── vectorstore.py            # FAISS vector database operations
-│   ├── reranker.py               # Cross-encoder reranking
-│   ├── indexing_manager.py        # Document indexing coordination
-│   ├── retrieval_manager.py       # Multi-source retrieval
-│   ├── embeddings_cache.py        # Embeddings cache management
-│   └── source_classifier.py       # Source metadata handling
-├── ui/                           # User interface
-│   ├── app.py                    # Gradio UI construction
-│   ├── handlers.py               # Event handlers & async operations
-│   ├── utils.py                  # UI utilities
-│   └── img/                      # UI images
-├── utils/                        # Shared utilities
-│   ├── file.py                   # File operations and signatures
-│   ├── text.py                   # Text processing
-│   └── references.py             # Citation handling
-├── main.py                       # Application entry point
-├── requirements.txt              # Python dependencies
-└── readme.md                     # This file
+# 4. Add documents to ./research_docs/, rescan, query
 ```
 
 ---
 
-## 🔧 Installation & Configuration
+## Configuration
 
-### Requirements
-- Python 3.9+
-- PyTorch with or without CUDA
-- ~16GB RAM minimum (more for larger models)
-- ~2GB disk space for vector database
+All settings in `config/settings.py`:
 
-### Step-by-Step Setup
+```python
+CONFIG = {
+    # Models
+    "reasoning_model": "deepseek-r1:14b",      # Analysis LLM
+    "synthesis_model": "qwen3:14b",            # Report LLM
+    "embedding_model": "BAAI/bge-base-en-v1.5", # Embeddings
+    "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    
+    # Temperature (lower = focused, higher = creative)
+    "reasoning_temperature": 0.6,
+    "synthesis_temperature": 0.3,
+    
+    # Context (optimized for 32k models)
+    "context_window": 32000,
+    "reasoning_max_tokens": 5000,
+    "synthesis_max_tokens": 8000,
+    
+    # Retrieval
+    "top_k_initial": 50,        # Candidates before reranking
+    "top_k_final": 14,          # After reranking
+    "chunk_size": 1200,
+    "chunk_overlap": 250,
+    
+    # Features
+    "use_two_stage_synthesis": True,
+    "use_structured_reasoning": True,
+    "use_llm_query_optimization": True,
+    "use_reranking": True,
+    "use_fast_scan": True,      # Stat-based (500-1000x faster)
+    
+    # Validation profiles: "strict", "balanced", "flexible", "novelty", "minimal"
+    "reasoning_validation_profile": "flexible",
+}
+```
 
-1. **Clone and install**
-   ```bash
-   git clone <repository-url>
-   cd research-synthesizer-v1
-   pip install -r requirements.txt
-   ```
-
-2. **Configure [config/settings.py](config/settings.py)**
-   ```python
-   CONFIG_BALANCED = {
-       # === Models ===
-       "reasoning_model": "deepseek-r1:14b",
-       "synthesis_model": "qwen2.5:7b-instruct",
-       "embedding_model": "BAAI/bge-base-en-v1.5",
-       "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
-       
-       # === Temperature (lower = focused, higher = creative) ===
-       "reasoning_temperature": 0.15,
-       "synthesis_temperature": 0.3,
-       
-       # === Token Limits ===
-       "context_window": 32768,
-       "reasoning_max_tokens": 10240,
-       "synthesis_max_tokens": 6144,
-       
-       # === Retrieval ===
-       "top_k_initial": 50,
-       "top_k_final": 15,
-       "use_reranking": True,
-       
-       # === Features ===
-       "use_two_stage_synthesis": True,
-       "use_fast_scan": True,
-       "use_llm_query_optimization": True,
-       
-       # === API Keys (optional) ===
-       # "tavily_api_key": "your-key-here",
-   }
-   ```
-
-3. **Set environment variables** (optional)
-   ```bash
-   export TAVILY_API_KEY="your-api-key"        # For web search
-   export HF_HUB_OFFLINE="1"                   # Run completely offline
-   export HF_HUB_DISABLE_TELEMETRY="1"        # Disable telemetry
-   ```
-
-4. **Create directories** (auto-created, but you can pre-create)
-   ```
-   ./research_docs/     # Your documents here
-   ./vector_db/         # Vector database (auto-created)
-   ./_reports/          # Generated reports
-   ./.embeddings_cache/ # Cached embeddings
-   ```
-
-5. **Launch the application**
-   ```bash
-   python main.py
-   ```
-   
-   Application appears at: `http://127.0.0.1:7860`
+**LLM Profiles** (preconfigured sets):
+- `research` - DeepSeek R1:14b + Qwen3:14b (research-grade)
+- `executive` - Qwen3:14b + GPT-OSS:20b (polished output)
+- `budget` - DeepSeek R1:8b + Qwen3:8b (efficient)
 
 ---
 
-## 💻 Programmatic Usage
+## Usage
 
-Use Research Synthesizer as a Python library:
+### UI Workflow
+1. **Add documents** to `./research_docs/` (PDF/TXT/MD)
+2. **Rescan** (async, non-blocking)
+3. **Configure** sources (local/ArXiv/web) and mode (dual-LLM/single-stage)
+4. **Query** → view report with citations
+5. **Export** (MD/HTML/DOCX/PDF) or enable TTS playback
+
+### Programmatic API
 
 ```python
 from core.synthesizer import ResearchSynthesizer
-from config.settings import CONFIG_BALANCED
+from config.settings import CONFIG
 
 # Initialize
-assistant = ResearchSynthesizer(**CONFIG_BALANCED)
-
-# Index documents
+assistant = ResearchSynthesizer(**CONFIG)
 assistant.scan_and_load_documents()
 
-# Run research query
+# Research query
 report = assistant.research(
-    query="What are recent advances in quantum computing?",
-    use_docs=True,      # Search local documents
-    use_arxiv=True,     # Search ArXiv
-    use_web=True,       # Search web (requires API key)
-    save_report=True    # Save to reports directory
+    query="Recent advances in quantum error correction",
+    use_docs=True,
+    use_arxiv=True,
+    use_web=True,
+    save_report=True
 )
 
-print(report)
-
-# Advanced usage
-search_results = assistant.retrieval_manager.search_documents(
-    query="quantum computing",
-    top_k=10
-)
-
-cache_stats = assistant.get_cache_stats()
+# Utilities
+stats = assistant.get_cache_stats()
 assistant.optimize_cache(keep_recent=7)
-
 duplicates = assistant.check_for_duplicates()
-if duplicates:
-    assistant.clear_duplicates_and_rebuild()
 ```
 
 ---
 
-## 🚀 Advanced Features
-
-### Fast Document Scanning
-
-By default, uses **stat-based signatures** (file size + modification time):
-- **Speed**: 500-1000x faster than MD5 hashing
-- **Automatic migration**: Converts legacy hash-based signatures on first scan
-- **Fallback**: Set `use_fast_scan: False` in config for cryptographic verification
-
-```python
-from retrieval.loader import DocumentIndexer
-indexer = DocumentIndexer(config)
-indexer.scan_documents("./research_docs/")
-```
-
-### Embeddings Cache Management
-
-Cached embeddings stored in `./.embeddings_cache/` directory:
-
-```python
-assistant.get_cache_stats()           # View cache usage
-assistant.optimize_cache(keep_recent=7)  # Keep only recent embeddings
-assistant.clear_embeddings_cache()     # Remove all cached embeddings
-```
-
-### Multi-Source Result Deduplication
-
-The system handles deduplication across sources:
-- **Local documents**: Exact match detection via FAISS
-- **ArXiv papers**: Metadata-based deduplication
-- **Web results**: URL-based deduplication
-- **Cross-source**: Semantic similarity handling
-
-### Async Background Operations
-
-All time-consuming operations run in the background without blocking the UI:
+## Project Structure
 
 ```
-UI remains responsive while:
-├─ Scanning and indexing documents
-├─ Checking for embeddings duplicates
-├─ Rebuilding vector database
-├─ Optimizing cache
-└─ Running full database reset (with automatic backup)
-```
-
-Status updates display in the Task Status section when operations complete.
-
----
-
-## 🏗️ System Architecture
-
-### Component Responsibilities
-
-**[config/](config/)** - Centralized configuration
-- Single `settings.py` with all configurable parameters
-- Easy to modify for different workflows or hardware
-- Model paths, batch sizes, retrieval settings, feature toggles
-
-**[core/](core/)** - Business logic orchestration
-- `synthesizer.py`: Main coordinator class that initializes and orchestrates all subsystems
-- `state.py`: Type-safe state management using LangGraph State objects
-- `reasoning_controller.py`: Manages dual-LLM reasoning stage execution
-- `reasoning_validator.py`: Validates reasoning output quality and extracts sources
-- `synthesis_validator.py`: Validates final synthesis quality
-- `report_manager.py`: Saves and loads research reports with metadata
-- `workflow_manager.py`: LangGraph workflow orchestration for multi-source research
-
-**[retrieval/](retrieval/)** - Document management and search
-- `loader.py`: Fast document scanning, loading, and chunking
-  - Stat-based signatures (500-1000x faster than hash-based)
-  - Supports PDF, TXT, MD formats
-  - Smart migration from legacy hash signatures
-- `vectorstore.py`: FAISS vector database operations and persistence
-- `reranker.py`: Cross-encoder reranking for improved result quality
-- `indexing_manager.py`: Coordinates document indexing and embedding caching
-- `embeddings_cache.py`: Manages cached embeddings for performance
-- `retrieval_manager.py`: Multi-source retrieval (documents, ArXiv, web)
-- `source_classifier.py`: Classifies and normalizes source metadata
-
-**[llm/](llm/)** - Language model operations
-- `reasoning.py`: Deep analysis stage (Stage 1 of Dual-LLM)
-- `synthesis.py`: Report generation stage (Stage 2 or single-stage)
-- `query_optimizer.py`: Optional LLM-based query refinement before search
-
-**[ui/](ui/)** - User interface and async task handling
-- `app.py`: Gradio UI construction with theme system and responsive layout
-- `handlers.py`: Event handlers and async background task management
-- `utils.py`: UI helper functions for status displays and config info
-
-**[utils/](utils/)** - Shared utilities
-- `file.py`: Fast file signatures, legacy hash support, document loading
-- `text.py`: Text processing, sanitization, chunk preparation
-- `references.py`: Citation and reference extraction from documents
-
-### Initialization Order
-
-The `ResearchSynthesizer` class initializes components in this order:
-
-1. Configuration loading
-2. Device detection (CUDA/CPU)
-3. Embeddings model (with caching)
-4. FAISS vector store
-5. Document reranker
-6. Document indexing manager
-7. Retrieval manager
-8. LLM engines (lazy loaded on first use)
-9. Controllers and validators
-10. Report manager
-11. Workflow manager
-
-This order is critical because dependencies must be initialized before consumers.
-
----
-
-## 🛠️ Development & Extension
-
-### Project Architecture Principles
-
-1. **Separation of Concerns**: Each module has a single responsibility
-2. **Lazy Loading**: Models initialize only when needed for better UX
-3. **Async Operations**: All I/O and long-running tasks run in background
-4. **Type Safety**: Extensive use of type hints and LangGraph StateGraph
-5. **Configuration-Driven**: Behavior controlled via `config/settings.py`
-6. **Modular Retrieval**: Easy to add new search sources (local, web, APIs)
-
-### Adding New Features
-
-**New retrieval source** (e.g., Google Scholar, database API):
-1. Create new method in `retrieval/retrieval_manager.py`
-2. Add to `WorkflowManager` nodes in `core/workflow_manager.py`
-3. Include in state update flow
-4. Add configuration option in `config/settings.py`
-
-**New LLM provider** (e.g., Claude, GPT-4, custom model):
-1. Create module in `llm/` (e.g., `llm/claude_integration.py`)
-2. Inherit from base LLM interface or implement compatible API
-3. Add model initialization in `synthesizer.py`
-4. Update configuration in `settings.py`
-
-**New UI component or tab**:
-1. Add Gradio elements in `ui/app.py`
-2. Create handler in `ui/handlers.py` if async operation needed
-3. Style with CSS in `assets/style.css`
-4. Update layout/structure in appropriate section
-
-### Code Style
-
-- **PEP 8**: Follow Python style guidelines
-- **Type Hints**: Always use for function parameters and returns
-- **Docstrings**: Module, class, and function level
-- **Comments**: Explain "why", not "what"
-- **Imports**: Group standard library, third-party, local (alphabetically)
-- **Max line length**: 120 characters
-
-### Testing
-
-**Quick validation**:
-```bash
-# Test document loading
-python -c "from core.synthesizer import ResearchSynthesizer; from config.settings import CONFIG_BALANCED; assistant = ResearchSynthesizer(**CONFIG_BALANCED); print('✓ Core system ready')"
-```
-
-**Comprehensive testing**:
-```bash
-pip install pytest flake8 black mypy
-python -m pytest tests/ -v
-flake8 . --max-line-length=120
-mypy . --ignore-missing-imports
+research-synthesizer-v1/
+├── config/
+│   └── settings.py               # All configuration
+├── core/
+│   ├── synthesizer.py            # Main coordinator
+│   ├── workflow_manager.py       # LangGraph pipeline
+│   ├── reasoning_controller.py   # Reasoning orchestration
+│   ├── synthesis_controller.py   # Synthesis orchestration
+│   ├── state.py                  # Type-safe state
+│   └── output/
+│       └── report_manager.py     # Report I/O
+├── llm/
+│   ├── reasoning.py              # Analysis engine
+│   ├── synthesis.py              # Report engine
+│   ├── query_optimizer.py        # Query expansion
+│   └── model_registry.py         # Model management
+├── retrieval/
+│   ├── indexing/
+│   │   ├── indexing_manager.py   # Document coordination
+│   │   ├── loader.py             # Scanning/chunking
+│   │   └── source_classifier.py  # Type detection
+│   ├── search/
+│   │   ├── retrieval_manager.py  # Multi-source search
+│   │   └── reranker.py           # Cross-encoder ranking
+│   ├── vectordb/
+│   │   ├── vectorstore.py        # FAISS manager
+│   │   ├── dual_manager.py       # Books/papers split
+│   │   └── embeddings_cache.py   # SQLite cache
+│   └── sources/
+│       ├── pdf_manager.py        # PDF caching
+│       └── web_pdf_embedder.py   # Web filtering
+├── core/validation/
+│   ├── structured_reasoning_validator.py
+│   ├── prose_reasoning_validator.py
+│   ├── synthesis_validator.py
+│   └── source_validator.py
+├── ui/
+│   ├── app.py                    # Gradio UI
+│   ├── handlers/                 # Event handlers
+│   └── utils.py                  # UI utilities
+├── utils/
+│   ├── file.py                   # Fast signatures
+│   ├── text.py                   # Processing
+│   └── tts_parsers.py            # Audio formatting
+└── main.py                       # Entry point
 ```
 
 ---
 
-## 🔍 Troubleshooting
+## Key Features
 
-### Common Issues and Solutions
+**Fast Document Scanning**
+- Stat-based signatures (file size + mtime) - 500-1000x faster than MD5
+- Automatic migration from legacy hash-based indices
+- Fallback to hash verification: `use_fast_scan: False`
 
-**Documents Not Indexing**
-- Verify file formats: Only PDF, TXT, MD supported
-- Check file permissions in `./research_docs/`
-- Check console for errors during rescan
-- Rescan runs async - check status panel after moment
-- Try "Reset Database" if stuck
+**Embeddings Cache**
+- SQLite storage in `./.embeddings_cache/`
+- 60-80% hit rate on typical workloads
+- Optimize: `assistant.optimize_cache(keep_recent=7)`
 
-**Model Loading Takes Too Long**
-- First model load: 30-60 seconds depending on size
-- Subsequent queries use cached models (much faster)
-- Use smaller models for faster loading
-- Check available RAM and GPU memory
+**Validation Profiles**
+- `strict` - High quality bar (min 2500 words, 10+ claims)
+- `balanced` - Production default
+- `flexible` - Optimized for DeepSeek R1 reasoning style
+- `novelty` - For creative insights and hypotheses
+- `minimal` - Structure only
 
-**CUDA/GPU Errors**
-- Set `"embedding_device": "cpu"` to disable GPU
-- Check GPU memory: Reduce `embedding_batch_size`
-- Verify PyTorch CUDA: `python -c "import torch; print(torch.cuda.is_available())"`
+**Async Operations**
+All long-running tasks (indexing, duplicates check, cache optimization, database rebuild) run in background threads. UI stays responsive with status updates.
 
-**Duplicate Embeddings**
-- Use "Check Duplicates" tool in Tools tab
-- Click "Rebuild Index" if duplicates found
-- Last resort: "Reset Database" button (creates backup)
+---
 
-**Web Search Not Working**
-- Set `TAVILY_API_KEY` environment variable
-- Get key from https://tavily.com
-- Verify API key has quota
-
-**Out of Memory Errors**
-- Reduce batch sizes: `embedding_batch_size: 32`
-- Reduce `top_k_initial` and `top_k_final`
-- Use smaller models
-- Switch to CPU: `embedding_device: "cpu"`
-
-### Performance Optimization
+## Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
-| Slow document scanning | `use_fast_scan: True` (500-1000x faster) |
-| Slow embeddings | Increase `embedding_batch_size` or use GPU |
-| Slow reranking | Reduce `top_k_initial` or increase batch size |
-| High memory | Reduce `chunk_size` or batch sizes |
-| Slow model loading | Use smaller models |
+| Slow scanning | Enable `use_fast_scan: True` |
+| Out of memory | Reduce batch sizes or switch to CPU |
+| Model loading slow | First load is 30-60s, subsequent queries use cached models |
+| Documents not indexing | Check file formats (PDF/TXT/MD only), verify permissions |
+| Web search failing | Set `TAVILY_API_KEY` environment variable |
+| Duplicate embeddings | Run "Check Duplicates" → "Rebuild Index" in Tools tab |
+
+**Performance Tuning**
+```python
+# Reduce memory usage
+"embedding_batch_size": 32,  # Lower if OOM
+"reranker_batch_size": 16,
+"top_k_initial": 30,         # Fewer candidates
+
+# Increase throughput
+"embedding_batch_size": 128,  # If GPU available
+"num_threads": 8,
+```
 
 ---
 
-## 📚 References
+## Technology Stack
 
-### Key Technologies
-- **LangChain**: Orchestration and LLM integration
-- **LangGraph**: Workflow state management and graph-based execution
-- **FAISS**: Vector similarity search at scale
-- **Gradio**: Web UI framework
-- **Transformers**: Hugging Face models for embeddings and cross-encoding
-- **PyTorch**: Deep learning backend
-- **ArXiv API**: Academic paper search
-- **Tavily Search API**: Web search integration
-- **Piper TTS**: Text-to-speech playback of the reports
-
-### Important Entry Points
-- [main.py](main.py) - Application entry point
-- [config/settings.py](config/settings.py) - All configuration options
-- [core/synthesizer.py](core/synthesizer.py) - Main coordinator class
-- [ui/app.py](ui/app.py) - Gradio UI and layout
-- [core/workflow_manager.py](core/workflow_manager.py) - LangGraph workflow
+- **LangChain** - LLM orchestration
+- **LangGraph** - State management and workflow graphs
+- **FAISS** - Vector similarity search
+- **Gradio** - Web UI
+- **Transformers** - HuggingFace embeddings and cross-encoders
+- **PyTorch** - Deep learning backend
+- **ArXiv API** - Academic paper search
+- **Tavily** - Web search integration
+- **Piper TTS** - Text-to-speech
 
 ---
 
 ## License
 
-This repository is for portfolio and showcase purposes only.
+Portfolio showcase project. Source code is private and not licensed for use, modification, or redistribution. All rights reserved.
 
-The source code is private and not licensed for use, modification, or redistribution.
-All rights reserved.
-
-
-## Support
-
-For questions or general feedback, please open an issue on this repository.
+For questions or feedback, open an issue on this repository.

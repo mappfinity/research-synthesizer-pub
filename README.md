@@ -45,6 +45,7 @@ A lightweight, extensible research-assistant framework that combines deep analyt
 ---
 ## Simplified High-Level System Flow
 
+```mermaid
 %%{init: {'theme':'base', 'themeVariables': { 'fontSize':'14px'}}}%%
 
 graph TB
@@ -303,6 +304,7 @@ graph TB
     class SYNTH_REJECT,ERROR_HANDLER,END_ERROR errorNode
     class UI_LAYER,HANDLERS,CONFIG,STATE_INIT,SAVE_MD,SAVE_HTML,SAVE_DOCX,SAVE_PDF,REPORT_MGR,VIZ_GEN,TTS_PROCESS,METRICS ioNode
     class DOC_CACHE_LOAD,DOC_CACHE_SAVE,DOC_EMBED,DOC_LOAD cacheNode
+```
 ---
 
 ## Key Class Relationships

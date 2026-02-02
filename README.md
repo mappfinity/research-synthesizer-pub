@@ -7,8 +7,11 @@ A lightweight, extensible research-assistant framework that combines deep analyt
 > **Perfect for:** Research teams, knowledge synthesis, competitive analysis, literature reviews, technical due diligence, and rapid prototyping.
 
 ---
-
+### ☀️ **UI (Light theme)**
 ![My Picture](img/ui.png)
+
+### 🌙 **UI (Dark theme)**
+![My Picture](img/ui_dark.png)
 
 ---
 

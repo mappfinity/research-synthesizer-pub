@@ -45,81 +45,264 @@ A lightweight, extensible research-assistant framework that combines deep analyt
 ---
 ## Simplified High-Level System Flow
 
-```mermaid
+%%{init: {'theme':'base', 'themeVariables': { 'fontSize':'14px'}}}%%
+
 graph TB
-    START["🚀 ResearchSynthesizer<br/>query | use_docs | use_arxiv | use_web"] --> WF["WorkflowManager"]
+    %% ===========================================
+    %% ENTRY POINT
+    %% ===========================================
+    START["🚀 <b>ResearchSynthesizer Entry</b><br/>━━━━━━━━━━━━━━━━━━<br/>query: str<br/>use_docs: bool<br/>use_arxiv: bool<br/>use_web: bool<br/>━━━━━━━━━━━━━━━━━━<br/>save_report: bool<br/>visualize: bool"] --> UI_LAYER["<b>UI Layer</b><br/>Gradio Interface"]
     
-    WF --> ROUTE{{"Source<br/>Selection"}}
+    UI_LAYER --> HANDLERS["<b>Request Handlers</b><br/>research_handlers<br/>model_handlers<br/>validation_handlers"]
     
+    HANDLERS --> STATE_INIT["<b>State Initialization</b><br/>ResearchState()<br/>━━━━━━━━━━━━━━━━━━<br/>query, docs, reasoning,<br/>synthesis, sources"]
+    
+    STATE_INIT --> WF["<b>WorkflowManager</b><br/>━━━━━━━━━━━━━━━━━━<br/>Main Orchestration<br/>run_research()"]
+    
+    WF --> CONFIG["<b>Load Configuration</b><br/>Settings, Model Registry<br/>Logging, Paths"]
+    
+    CONFIG --> ROUTE{{"<b>Source Selection</b><br/>━━━━━━━━━━━━━━━━━━<br/>Which sources<br/>to query?"}}
+    
+    %% ===========================================
     %% DOCUMENT PATH
-    ROUTE -->|use_docs| DOC_SCAN["DocumentIndexer<br/>Scan & Classify"]
-    DOC_SCAN --> DOC_CACHE["EmbeddingsCacheManager<br/>Cache hit: ~1ms | Miss: ~100ms"]
-    DOC_CACHE --> DOC_DUAL["DualVectorStoreManager<br/>Books | Papers indices"]
-    DOC_DUAL --> DOC_FAISS["FAISS Save"]
+    %% ===========================================
+    ROUTE -->|"use_docs = True"| DOC_CHECK{{"Existing<br/>Index?"}}
     
+    DOC_CHECK -->|"No"| DOC_SCAN["<b>DocumentIndexer</b><br/>━━━━━━━━━━━━━━━━━━<br/>scan_for_new_documents()<br/>Fast scan mode"]
+    
+    DOC_CHECK -->|"Yes"| DOC_LOAD["<b>Load Existing Index</b><br/>From disk cache"]
+    
+    DOC_SCAN --> DOC_CLASSIFY["<b>SourceTypeClassifier</b><br/>━━━━━━━━━━━━━━━━━━<br/>classify(file_path)<br/>→ BOOK | PAPER"]
+    
+    DOC_CLASSIFY --> DOC_CHUNK["<b>Document Chunking</b><br/>chunk_size: 1000<br/>chunk_overlap: 200<br/>load_and_split_documents()"]
+    
+    DOC_CHUNK --> DOC_CACHE_CHK{{"Cache<br/>Hit?"}}
+    
+    DOC_CACHE_CHK -->|"Hit<br/>~1ms"| DOC_CACHE_LOAD["<b>EmbeddingsCacheManager</b><br/>load_batch(cache_keys)<br/>From disk"]
+    
+    DOC_CACHE_CHK -->|"Miss<br/>~100ms"| DOC_EMBED["<b>Generate Embeddings</b><br/>HuggingFaceEmbeddings<br/>batch_size: 32"]
+    
+    DOC_EMBED --> DOC_CACHE_SAVE["<b>Cache Embeddings</b><br/>save_batch()"]
+    
+    DOC_CACHE_SAVE --> DOC_DUAL
+    DOC_CACHE_LOAD --> DOC_DUAL
+    DOC_LOAD --> DOC_DUAL
+    
+    DOC_DUAL["<b>DualVectorStoreManager</b><br/>━━━━━━━━━━━━━━━━━━<br/>add_documents_routed()<br/>━━━━━━━━━━━━━━━━━━<br/>books_index: FAISS<br/>papers_index: FAISS"]
+    
+    DOC_DUAL --> DOC_SAVE["<b>Save Indices</b><br/>books_path<br/>papers_path"]
+    
+    %% ===========================================
     %% ARXIV PATH
-    ROUTE -->|use_arxiv| ARXIV_OPT["QueryOptimizer"]
-    ARXIV_OPT --> ARXIV_API["ArXiv API Search"]
-    ARXIV_API --> ARXIV_PDF["AsyncPDFTitleEnhancer<br/>Optional PDF fetch"]
-    ARXIV_PDF --> ARXIV_EMBED["Embed Results"]
+    %% ===========================================
+    ROUTE -->|"use_arxiv = True"| ARXIV_OPT["<b>QueryOptimizer</b><br/>━━━━━━━━━━━━━━━━━━<br/>LLM-powered<br/>query expansion"]
     
+    ARXIV_OPT --> ARXIV_API["<b>ArXiv API Search</b><br/>max_results: 50<br/>sort_by: relevance"]
+    
+    ARXIV_API --> ARXIV_FILTER["<b>Filter Results</b><br/>Relevance threshold<br/>Deduplication"]
+    
+    ARXIV_FILTER --> ARXIV_PDF_CHK{{"Fetch<br/>PDFs?"}}
+    
+    ARXIV_PDF_CHK -->|"Yes"| ARXIV_PDF["<b>AsyncPDFTitleEnhancer</b><br/>━━━━━━━━━━━━━━━━━━<br/>process_queue(max_pdfs)<br/>Async download"]
+    
+    ARXIV_PDF_CHK -->|"No<br/>(metadata only)"| ARXIV_EMBED
+    
+    ARXIV_PDF --> ARXIV_PARSE["<b>PDF Parsing</b><br/>Extract text<br/>ParsedSource()"]
+    
+    ARXIV_PARSE --> ARXIV_EMBED["<b>Embed Results</b><br/>HuggingFaceEmbeddings<br/>Add to temp store"]
+    
+    %% ===========================================
     %% WEB PATH
-    ROUTE -->|use_web| WEB_OPT["QueryOptimizer"]
-    WEB_OPT --> TAVILY["Tavily API Search"]
-    TAVILY --> WEB_FILTER["WebPDFEmbedder<br/>Filter relevance > 0.5"]
-    WEB_FILTER --> PDF_MGR["PDFManager<br/>Cache & download"]
-    PDF_MGR --> WEB_EMBED["Embed Results"]
+    %% ===========================================
+    ROUTE -->|"use_web = True"| WEB_OPT["<b>QueryOptimizer</b><br/>━━━━━━━━━━━━━━━━━━<br/>LLM-powered<br/>query expansion"]
     
-    %% CONVERGENCE & SEARCH
-    DOC_FAISS --> SEARCH["RetrievalManager<br/>Search all indices"]
+    WEB_OPT --> TAVILY["<b>Tavily API Search</b><br/>━━━━━━━━━━━━━━━━━━<br/>TavilySearchAPIRetriever<br/>search_depth: advanced<br/>max_results: 20"]
+    
+    TAVILY --> WEB_FILTER["<b>WebPDFEmbedder</b><br/>━━━━━━━━━━━━━━━━━━<br/>filter_high_relevance_docs()<br/>score_threshold > 0.5"]
+    
+    WEB_FILTER --> WEB_PDF_CHECK{{"PDF<br/>Content?"}}
+    
+    WEB_PDF_CHECK -->|"Yes"| PDF_MGR["<b>PDFManager</b><br/>━━━━━━━━━━━━━━━━━━<br/>Cache check<br/>Download if needed<br/>max_size: 50MB<br/>timeout: 30s"]
+    
+    WEB_PDF_CHECK -->|"No<br/>(HTML only)"| WEB_PARSE["<b>Parse HTML</b><br/>Extract text<br/>Clean formatting"]
+    
+    PDF_MGR --> PDF_PARSE["<b>PDF Processing</b><br/>Text extraction<br/>ParsedSource()"]
+    
+    PDF_PARSE --> WEB_EMBED
+    WEB_PARSE --> WEB_EMBED
+    
+    WEB_EMBED["<b>Embed Web Results</b><br/>download_and_embed_batch()<br/>max_concurrent: 5"]
+    
+    %% ===========================================
+    %% SEARCH & RETRIEVAL CONVERGENCE
+    %% ===========================================
+    DOC_SAVE --> SEARCH["<b>RetrievalManager</b><br/>━━━━━━━━━━━━━━━━━━<br/>search_all(query, k=100)<br/>━━━━━━━━━━━━━━━━━━<br/>Unified search across:<br/>• Books index<br/>• Papers index<br/>• ArXiv results<br/>• Web results"]
+    
     ARXIV_EMBED --> SEARCH
     WEB_EMBED --> SEARCH
     
-    SEARCH --> COMBINE["Combine & Deduplicate"]
-    COMBINE --> RERANK["DocumentReranker<br/>Cross-encoder + weights<br/>book=1.0 | arxiv=0.95 | web=0.7"]
-    RERANK --> TOP_K["Top-K Selection<br/>max=50, max_chars=100k"]
+    SEARCH --> COMBINE["<b>Combine & Deduplicate</b><br/>━━━━━━━━━━━━━━━━━━<br/>Merge from all sources<br/>Remove duplicates<br/>Normalize metadata"]
     
-    %% REASONING WITH RETRY
-    TOP_K --> REASON["ReasoningEngine<br/>LLM analysis (temp=0.7)"]
-    REASON --> VAL_REASON["Validation<br/>Schema + Citations"]
-    VAL_REASON -->|invalid| RETRY{{"Retry?<br/>max=3"}}
-    RETRY -->|yes| REASON
-    RETRY -->|no| REASON_OK["✅ Reasoning Complete"]
-    VAL_REASON -->|valid| REASON_OK
+    COMBINE --> WEIGHT_ADJ["<b>Source Weight Adjustment</b><br/>━━━━━━━━━━━━━━━━━━<br/>SourceTypeClassifier<br/>get_query_aware_weights()<br/>━━━━━━━━━━━━━━━━━━<br/>Dynamic weights by query"]
     
-    %% SYNTHESIS
-    REASON_OK --> SYNTH["SynthesisEngine<br/>LLM generation (temp=0.3)"]
-    SYNTH --> VAL_SYNTH["Validation<br/>Section check"]
-    VAL_SYNTH -->|invalid| SYNTH_RETRY{{"Retry?"}}
-    SYNTH_RETRY -->|yes| SYNTH
-    SYNTH_RETRY -->|no| SYNTH_OK["✅ Synthesis Complete"]
-    VAL_SYNTH -->|valid| SYNTH_OK
+    WEIGHT_ADJ --> RERANK["<b>DocumentReranker</b><br/>━━━━━━━━━━━━━━━━━━<br/>CrossEncoder reranking<br/>━━━━━━━━━━━━━━━━━━<br/>Weights:<br/>• book: 1.0<br/>• paper: 0.95<br/>• web_pdf: 0.7<br/>━━━━━━━━━━━━━━━━━━<br/>alpha: 0.5 (balance)<br/>batch_size: 32"]
     
-    %% OUTPUT
-    SYNTH_OK --> FORMAT{{"Format"}}
-    FORMAT --> OUTPUT["ReportManager<br/>Save to reports/YYYY-MM-DD/HH-MM-SS"]
-    OUTPUT --> DONE["✅ Complete (10-30s)"]
+    RERANK --> TOP_K["<b>Top-K Selection</b><br/>━━━━━━━━━━━━━━━━━━<br/>max_docs: 50<br/>max_chars: 100,000<br/>max_per_source: None"]
     
-    classDef entry fill:#1A237E,stroke:#0D47A1,color:#FFF,stroke-width:3px,font-weight:bold
-    classDef orchestrator fill:#1565C0,stroke:#0D47A1,color:#FFF,stroke-width:2px
-    classDef processor fill:#1976D2,stroke:#1565C0,color:#FFF,stroke-width:2px
-    classDef llm fill:#2196F3,stroke:#1976D2,color:#FFF,stroke-width:2px
-    classDef storage fill:#455A64,stroke:#37474F,color:#FFF,stroke-width:2px
-    classDef api fill:#42A5F5,stroke:#2196F3,color:#FFF,stroke-width:2px
-    classDef validator fill:#00796B,stroke:#00695C,color:#FFF,stroke-width:2px
-    classDef decision fill:#78909C,stroke:#546E7A,color:#FFF,stroke-width:2px
-    classDef success fill:#2E7D32,stroke:#1B5E20,color:#FFF,stroke-width:3px
+    %% ===========================================
+    %% REASONING PHASE
+    %% ===========================================
+    TOP_K --> REASON_CTRL["<b>ReasoningController</b><br/>━━━━━━━━━━━━━━━━━━<br/>Orchestrate reasoning phase<br/>max_retries: 3"]
     
-    class START,DONE entry
-    class WF,OUTPUT orchestrator
-    class DOC_SCAN,COMBINE,RERANK,TOP_K processor
-    class REASON,SYNTH llm
-    class DOC_FAISS,DOC_DUAL,DOC_CACHE,ARXIV_EMBED,WEB_EMBED storage
-    class ARXIV_API,TAVILY,ARXIV_PDF,PDF_MGR api
-    class VAL_REASON,VAL_SYNTH validator
-    class ROUTE,RETRY,SYNTH_RETRY,FORMAT decision
-    class REASON_OK,SYNTH_OK success
-```
+    REASON_CTRL --> REASON_MODE{{"Reasoning<br/>Mode?"}}
+    
+    REASON_MODE -->|"Structured"| REASON_STRUCT["<b>ReasoningEngine</b><br/>━━━━━━━━━━━━━━━━━━<br/>LLM: ChatOllama<br/>temp: 0.7<br/>━━━━━━━━━━━━━━━━━━<br/>Output: JSON Schema<br/>• claims<br/>• evidence<br/>• comparisons<br/>• thematic_groups"]
+    
+    REASON_MODE -->|"Prose"| REASON_PROSE["<b>ReasoningEngine</b><br/>━━━━━━━━━━━━━━━━━━<br/>LLM: ChatOllama<br/>temp: 0.7<br/>━━━━━━━━━━━━━━━━━━<br/>Output: Prose format<br/>Natural language"]
+    
+    REASON_STRUCT --> VAL_STRUCT["<b>StructuredReasoningValidator</b><br/>━━━━━━━━━━━━━━━━━━<br/>Schema validation<br/>Source reference check<br/>Evidence quality check"]
+    
+    REASON_PROSE --> VAL_PROSE["<b>ReasoningOutputValidator</b><br/>━━━━━━━━━━━━━━━━━━<br/>Citation format check<br/>Section completeness<br/>Source count validation"]
+    
+    VAL_STRUCT --> VAL_CHECK_R{{"Valid?"}}
+    VAL_PROSE --> VAL_CHECK_R
+    
+    VAL_CHECK_R -->|"❌ Invalid"| RETRY_R{{"Retry<br/>Count?"}}
+    
+    RETRY_R -->|"< max_retries"| FEEDBACK_R["<b>Generate Feedback</b><br/>━━━━━━━━━━━━━━━━━━<br/>Error analysis<br/>Suggestions for fix"]
+    
+    FEEDBACK_R --> REASON_CTRL
+    
+    RETRY_R -->|"≥ max_retries"| REASON_FAIL["⚠️ <b>Reasoning Failed</b><br/>Log failure<br/>Use best attempt"]
+    
+    VAL_CHECK_R -->|"✅ Valid"| REASON_OK["✅ <b>Reasoning Complete</b><br/>━━━━━━━━━━━━━━━━━━<br/>State updated with:<br/>• reasoning_output<br/>• source_index<br/>• source_counts"]
+    
+    REASON_FAIL --> REASON_OK
+    
+    %% ===========================================
+    %% SYNTHESIS PHASE
+    %% ===========================================
+    REASON_OK --> SYNTH_CTRL["<b>SynthesisController</b><br/>━━━━━━━━━━━━━━━━━━<br/>Orchestrate synthesis<br/>max_retries: 3"]
+    
+    SYNTH_CTRL --> SOURCE_VAL["<b>Source Validation</b><br/>━━━━━━━━━━━━━━━━━━<br/>validate_sources_before_synthesis()<br/>Check all citations valid"]
+    
+    SOURCE_VAL --> SOURCE_VAL_CHK{{"Sources<br/>Valid?"}}
+    
+    SOURCE_VAL_CHK -->|"❌ No"| SOURCE_FIX["<b>Attempt Source Fix</b><br/>Remove invalid refs<br/>Update state"]
+    
+    SOURCE_VAL_CHK -->|"✅ Yes"| SYNTH_MODE{{"Synthesis<br/>Strategy?"}}
+    
+    SOURCE_FIX --> SYNTH_MODE
+    
+    SYNTH_MODE -->|"Two-stage<br/>(from JSON)"| SYNTH_2S_JSON["<b>SynthesisEngine</b><br/>━━━━━━━━━━━━━━━━━━<br/>synthesize_two_stage_from_json()<br/>━━━━━━━━━━━━━━━━━━<br/>Stage 1: Structure from JSON<br/>Stage 2: Prose generation<br/>temp: 0.3"]
+    
+    SYNTH_MODE -->|"Two-stage<br/>(from prose)"| SYNTH_2S_PROSE["<b>SynthesisEngine</b><br/>━━━━━━━━━━━━━━━━━━<br/>synthesize_two_stage_from_prose()<br/>━━━━━━━━━━━━━━━━━━<br/>Stage 1: Extract structure<br/>Stage 2: Enhance & format<br/>temp: 0.3"]
+    
+    SYNTH_MODE -->|"Single-stage"| SYNTH_SINGLE["<b>SynthesisEngine</b><br/>━━━━━━━━━━━━━━━━━━<br/>synthesize_single_stage()<br/>━━━━━━━━━━━━━━━━━━<br/>Direct generation<br/>temp: 0.3"]
+    
+    SYNTH_2S_JSON --> SYNTH_FORMAT
+    SYNTH_2S_PROSE --> SYNTH_FORMAT
+    SYNTH_SINGLE --> SYNTH_FORMAT
+    
+    SYNTH_FORMAT["<b>Format Application</b><br/>━━━━━━━━━━━━━━━━━━<br/>Apply style instructions<br/>Document type: {type}<br/>Synthesis style: {style}"]
+    
+    SYNTH_FORMAT --> VAL_SYNTH["<b>SynthesisOutputValidator</b><br/>━━━━━━━━━━━━━━━━━━<br/>validate(final_report)<br/>━━━━━━━━━━━━━━━━━━<br/>Checks:<br/>• Section presence<br/>• Citation format<br/>• Source attribution<br/>• Content completeness"]
+    
+    VAL_SYNTH --> VAL_CHECK_S{{"Valid?"}}
+    
+    VAL_CHECK_S -->|"❌ Invalid"| RETRY_S{{"Retry<br/>Count?"}}
+    
+    RETRY_S -->|"< max_retries"| FEEDBACK_S["<b>Generate Feedback</b><br/>━━━━━━━━━━━━━━━━━━<br/>Validation results<br/>Missing sections<br/>Citation issues"]
+    
+    FEEDBACK_S --> SYNTH_CTRL
+    
+    RETRY_S -->|"≥ max_retries"| SYNTH_FAIL_CHK{{"hard_reject_on<br/>_synthesis_failure?"}}
+    
+    SYNTH_FAIL_CHK -->|"Yes"| SYNTH_REJECT["❌ <b>Synthesis Rejected</b><br/>Return error<br/>to user"]
+    
+    SYNTH_FAIL_CHK -->|"No"| SYNTH_WARN["⚠️ <b>Synthesis Warning</b><br/>Use best attempt<br/>Log validation issues"]
+    
+    VAL_CHECK_S -->|"✅ Valid"| SYNTH_OK["✅ <b>Synthesis Complete</b><br/>━━━━━━━━━━━━━━━━━━<br/>final_report generated"]
+    
+    SYNTH_WARN --> SYNTH_OK
+    
+    %% ===========================================
+    %% POST-PROCESSING
+    %% ===========================================
+    SYNTH_OK --> CLEANUP["<b>Post-Synthesis Cleanup</b><br/>━━━━━━━━━━━━━━━━━━<br/>run_post_synthesis_cleanup()<br/>• Format cleanup<br/>• Citation normalization<br/>• Metadata enrichment"]
+    
+    CLEANUP --> SAVE_CHECK{{"save_report<br/>= True?"}}
+    
+    SAVE_CHECK -->|"Yes"| FORMAT_SEL{{"Output<br/>Format?"}}
+    
+    FORMAT_SEL -->|"Markdown"| SAVE_MD["<b>Save Markdown</b><br/>.md file"]
+    FORMAT_SEL -->|"HTML"| SAVE_HTML["<b>Save HTML</b><br/>.html file"]
+    FORMAT_SEL -->|"DOCX"| SAVE_DOCX["<b>Save DOCX</b><br/>report_converters"]
+    FORMAT_SEL -->|"PDF"| SAVE_PDF["<b>Save PDF</b><br/>report_converters"]
+    
+    SAVE_MD --> REPORT_MGR
+    SAVE_HTML --> REPORT_MGR
+    SAVE_DOCX --> REPORT_MGR
+    SAVE_PDF --> REPORT_MGR
+    
+    REPORT_MGR["<b>ReportManager</b><br/>━━━━━━━━━━━━━━━━━━<br/>Save to:<br/>reports/YYYY-MM-DD/<br/>  HH-MM-SS/report.{ext}<br/>━━━━━━━━━━━━━━━━━━<br/>Save metadata JSON"]
+    
+    SAVE_CHECK -->|"No"| VIZ_CHECK
+    REPORT_MGR --> VIZ_CHECK
+    
+    VIZ_CHECK{{"visualize<br/>= True?"}}
+    
+    VIZ_CHECK -->|"Yes"| VIZ_GEN["<b>Generate Visualization</b><br/>━━━━━━━━━━━━━━━━━━<br/>Format: {visualize_format}<br/>• Network graph<br/>• Citation flow<br/>• Source distribution"]
+    
+    VIZ_CHECK -->|"No"| TTS_CHECK
+    VIZ_GEN --> TTS_CHECK
+    
+    TTS_CHECK{{"TTS<br/>requested?"}}
+    
+    TTS_CHECK -->|"Yes"| TTS_PROCESS["<b>TTS Processing</b><br/>━━━━━━━━━━━━━━━━━━<br/>tts_handlers<br/>• LatexMathProcessor<br/>• MinimalCitationProcessor<br/>• NovelInsightProcessor"]
+    
+    TTS_CHECK -->|"No"| METRICS
+    TTS_PROCESS --> METRICS
+    
+    METRICS["<b>Log Metrics</b><br/>━━━━━━━━━━━━━━━━━━<br/>• Total time: 10-30s<br/>• Sources used<br/>• Tokens consumed<br/>• Cache hits<br/>• Validation attempts"]
+    
+    METRICS --> DONE["✅ <b>Process Complete</b><br/>━━━━━━━━━━━━━━━━━━<br/>Return:<br/>• final_report<br/>• metadata<br/>• visualization (optional)<br/>• audio (optional)"]
+    
+    SYNTH_REJECT --> ERROR_HANDLER["🔴 <b>Error Handler</b><br/>Log error<br/>Return error message"]
+    
+    ERROR_HANDLER --> END_ERROR["❌ <b>Process Failed</b>"]
+    
+    %% ===========================================
+    %% STYLING DEFINITIONS
+    %% ===========================================
+    classDef entryNode fill:#1A365D,stroke:#0F2942,stroke-width:4px,color:#FFFFFF,font-weight:bold
+    classDef orchestratorNode fill:#2C5282,stroke:#1A365D,stroke-width:3px,color:#FFFFFF,font-weight:bold
+    classDef processorNode fill:#4A90C7,stroke:#2C5282,stroke-width:2px,color:#FFFFFF
+    classDef llmNode fill:#5B9FCF,stroke:#4A90C7,stroke-width:2px,color:#FFFFFF,font-style:italic
+    classDef storageNode fill:#64748B,stroke:#475569,stroke-width:2px,color:#FFFFFF
+    classDef apiNode fill:#7CB8E0,stroke:#5B9FCF,stroke-width:2px,color:#1A202C
+    classDef validatorNode fill:#2F855A,stroke:#22543D,stroke-width:2px,color:#FFFFFF
+    classDef decisionNode fill:#718096,stroke:#4A5568,stroke-width:2px,color:#FFFFFF,font-weight:bold
+    classDef successNode fill:#38A169,stroke:#2F855A,stroke-width:3px,color:#FFFFFF,font-weight:bold
+    classDef warningNode fill:#DD6B20,stroke:#C05621,stroke-width:3px,color:#FFFFFF,font-weight:bold
+    classDef errorNode fill:#E53E3E,stroke:#C53030,stroke-width:3px,color:#FFFFFF,font-weight:bold
+    classDef ioNode fill:#E2E8F0,stroke:#A0AEC0,stroke-width:2px,color:#2D3748
+    classDef cacheNode fill:#90CDF4,stroke:#63B3ED,stroke-width:2px,color:#1A202C
+    
+    %% Apply styles
+    class START entryNode
+    class WF,REASON_CTRL,SYNTH_CTRL orchestratorNode
+    class DOC_SCAN,DOC_CLASSIFY,DOC_CHUNK,COMBINE,WEIGHT_ADJ,RERANK,TOP_K,CLEANUP processorNode
+    class REASON_STRUCT,REASON_PROSE,SYNTH_2S_JSON,SYNTH_2S_PROSE,SYNTH_SINGLE,ARXIV_OPT,WEB_OPT llmNode
+    class DOC_DUAL,DOC_SAVE,ARXIV_EMBED,WEB_EMBED,SEARCH storageNode
+    class ARXIV_API,TAVILY,ARXIV_PDF,PDF_MGR,WEB_FILTER apiNode
+    class VAL_STRUCT,VAL_PROSE,VAL_SYNTH,SOURCE_VAL validatorNode
+    class ROUTE,DOC_CHECK,DOC_CACHE_CHK,ARXIV_PDF_CHK,WEB_PDF_CHECK,REASON_MODE,VAL_CHECK_R,RETRY_R,SOURCE_VAL_CHK,SYNTH_MODE,VAL_CHECK_S,RETRY_S,SYNTH_FAIL_CHK,SAVE_CHECK,FORMAT_SEL,VIZ_CHECK,TTS_CHECK decisionNode
+    class REASON_OK,SYNTH_OK,DONE successNode
+    class REASON_FAIL,SYNTH_WARN warningNode
+    class SYNTH_REJECT,ERROR_HANDLER,END_ERROR errorNode
+    class UI_LAYER,HANDLERS,CONFIG,STATE_INIT,SAVE_MD,SAVE_HTML,SAVE_DOCX,SAVE_PDF,REPORT_MGR,VIZ_GEN,TTS_PROCESS,METRICS ioNode
+    class DOC_CACHE_LOAD,DOC_CACHE_SAVE,DOC_EMBED,DOC_LOAD cacheNode
 ---
 
 ## Key Class Relationships

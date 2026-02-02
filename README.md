@@ -2,9 +2,9 @@
 
 **Enterprise-grade research synthesis powered by dual-LLM reasoning + synthesis architecture**
 
-A lightweight, extensible research-assistant framework that combines deep analytical reasoning with polished report generation. Ingests local and remote documents, builds semantic vector indexes, and produces source-grounded technical outputs using configurable LLM pipelines.
+A lightweight, extensible research-assistant framework that combines deep analytical reasoning with polished report generation. Ingests local and remote documents, builds semantic vector indexes, and produces source-grounded technical outputs using configurable LLM pipelines—with optional text-to-speech playback for listening to generated reports and summaries.
 
-> **Perfect for:** Research teams, knowledge synthesis, competitive analysis, literature reviews, technical due diligence, and rapid prototyping.
+> **Perfect for:** Research teams, knowledge synthesis, competitive analysis, literature reviews, technical due diligence, rapid prototyping, and hands-free consumption of research outputs.
 
 ---
 ### ☀️ **UI (Light theme)**
@@ -304,7 +304,7 @@ research-synthesizer-v1/
 ### Requirements
 - Python 3.9+
 - PyTorch with or without CUDA
-- ~8GB RAM minimum (more for larger models)
+- ~16GB RAM minimum (more for larger models)
 - ~2GB disk space for vector database
 
 ### Step-by-Step Setup
@@ -648,6 +648,7 @@ mypy . --ignore-missing-imports
 - **PyTorch**: Deep learning backend
 - **ArXiv API**: Academic paper search
 - **Tavily Search API**: Web search integration
+- **Piper TTS**: Text-to-speech playback of the reports
 
 ### Important Entry Points
 - [main.py](main.py) - Application entry point

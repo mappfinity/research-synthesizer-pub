@@ -46,78 +46,80 @@ A lightweight, extensible research-assistant framework that combines deep analyt
 ## Simplified High-Level System Flow
 
 ```mermaid
-graph TD
-    START["🚀 User Query"] --> SYNTH["ResearchSynthesizer<br/>Main Orchestrator"]
+graph TB
+    START["🚀 ResearchSynthesizer<br/>query | use_docs | use_arxiv | use_web"] --> WF["WorkflowManager"]
     
-    SYNTH --> STATE["ResearchState<br/>Initialize"]
-    STATE --> WF["WorkflowManager<br/>Execute Workflow"]
+    WF --> ROUTE{{"Source<br/>Selection"}}
     
-    WF --> ROUTE{{"Route<br/>Sources"}}
+    %% DOCUMENT PATH
+    ROUTE -->|use_docs| DOC_SCAN["DocumentIndexer<br/>Scan & Classify"]
+    DOC_SCAN --> DOC_CACHE["EmbeddingsCacheManager<br/>Cache hit: ~1ms | Miss: ~100ms"]
+    DOC_CACHE --> DOC_DUAL["DualVectorStoreManager<br/>Books | Papers indices"]
+    DOC_DUAL --> DOC_FAISS["FAISS Save"]
     
-    ROUTE -->|Docs| DOC["📚 Document<br/>IndexingManager"]
-    ROUTE -->|ArXiv| ARXIV["📜 ArXiv<br/>RetrievalManager"]
-    ROUTE -->|Web| WEB["🌐 Web<br/>RetrievalManager"]
+    %% ARXIV PATH
+    ROUTE -->|use_arxiv| ARXIV_OPT["QueryOptimizer"]
+    ARXIV_OPT --> ARXIV_API["ArXiv API Search"]
+    ARXIV_API --> ARXIV_PDF["AsyncPDFTitleEnhancer<br/>Optional PDF fetch"]
+    ARXIV_PDF --> ARXIV_EMBED["Embed Results"]
     
-    DOC --> SCAN["DocumentIndexer<br/>scan & load"]
-    SCAN --> EMBED_D["EmbeddingsCacheManager<br/>cache→compute"]
-    EMBED_D --> VS["VectorStoreManager<br/>FAISS storage"]
+    %% WEB PATH
+    ROUTE -->|use_web| WEB_OPT["QueryOptimizer"]
+    WEB_OPT --> TAVILY["Tavily API Search"]
+    TAVILY --> WEB_FILTER["WebPDFEmbedder<br/>Filter relevance > 0.5"]
+    WEB_FILTER --> PDF_MGR["PDFManager<br/>Cache & download"]
+    PDF_MGR --> WEB_EMBED["Embed Results"]
     
-    ARXIV --> ARXIV_API["QueryOptimizer<br/>ArXiv search"]
-    ARXIV_API --> EMBED_A["Embed results<br/>add to FAISS"]
+    %% CONVERGENCE & SEARCH
+    DOC_FAISS --> SEARCH["RetrievalManager<br/>Search all indices"]
+    ARXIV_EMBED --> SEARCH
+    WEB_EMBED --> SEARCH
     
-    WEB --> WEB_API["QueryOptimizer<br/>Tavily search"]
-    WEB_API --> PDF["PDFManager<br/>cache PDFs"]
-    PDF --> EMBED_W["Embed PDFs<br/>add to FAISS"]
+    SEARCH --> COMBINE["Combine & Deduplicate"]
+    COMBINE --> RERANK["DocumentReranker<br/>Cross-encoder + weights<br/>book=1.0 | arxiv=0.95 | web=0.7"]
+    RERANK --> TOP_K["Top-K Selection<br/>max=50, max_chars=100k"]
     
-    VS --> SEARCH["RetrievalManager<br/>search_all_indexes"]
-    EMBED_A --> SEARCH
-    EMBED_W --> SEARCH
+    %% REASONING WITH RETRY
+    TOP_K --> REASON["ReasoningEngine<br/>LLM analysis (temp=0.7)"]
+    REASON --> VAL_REASON["Validation<br/>Schema + Citations"]
+    VAL_REASON -->|invalid| RETRY{{"Retry?<br/>max=3"}}
+    RETRY -->|yes| REASON
+    RETRY -->|no| REASON_OK["✅ Reasoning Complete"]
+    VAL_REASON -->|valid| REASON_OK
     
-    SEARCH --> RERANK["DocumentReranker<br/>score & rerank<br/>SourceTypeClassifier"]
+    %% SYNTHESIS
+    REASON_OK --> SYNTH["SynthesisEngine<br/>LLM generation (temp=0.3)"]
+    SYNTH --> VAL_SYNTH["Validation<br/>Section check"]
+    VAL_SYNTH -->|invalid| SYNTH_RETRY{{"Retry?"}}
+    SYNTH_RETRY -->|yes| SYNTH
+    SYNTH_RETRY -->|no| SYNTH_OK["✅ Synthesis Complete"]
+    VAL_SYNTH -->|valid| SYNTH_OK
     
-    RERANK --> TOP_K["Top-K Results<br/>deduped & truncated"]
+    %% OUTPUT
+    SYNTH_OK --> FORMAT{{"Format"}}
+    FORMAT --> OUTPUT["ReportManager<br/>Save to reports/YYYY-MM-DD/HH-MM-SS"]
+    OUTPUT --> DONE["✅ Complete (10-30s)"]
     
-    TOP_K --> REASON["ReasoningController<br/>LLM analysis<br/>with retry"]
+    classDef entry fill:#1A237E,stroke:#0D47A1,color:#FFF,stroke-width:3px,font-weight:bold
+    classDef orchestrator fill:#1565C0,stroke:#0D47A1,color:#FFF,stroke-width:2px
+    classDef processor fill:#1976D2,stroke:#1565C0,color:#FFF,stroke-width:2px
+    classDef llm fill:#2196F3,stroke:#1976D2,color:#FFF,stroke-width:2px
+    classDef storage fill:#455A64,stroke:#37474F,color:#FFF,stroke-width:2px
+    classDef api fill:#42A5F5,stroke:#2196F3,color:#FFF,stroke-width:2px
+    classDef validator fill:#00796B,stroke:#00695C,color:#FFF,stroke-width:2px
+    classDef decision fill:#78909C,stroke:#546E7A,color:#FFF,stroke-width:2px
+    classDef success fill:#2E7D32,stroke:#1B5E20,color:#FFF,stroke-width:3px
     
-    REASON --> VALIDATE_R["ReasoningOutputValidator<br/>SourceValidator<br/>schema + citation check"]
-    
-    VALIDATE_R -->|Valid| VALID["✅ Valid"]
-    VALIDATE_R -->|Retry| REASON
-    
-    VALID --> SYNTH_E["SynthesisEngine<br/>generate report<br/>single or two-stage"]
-    
-    SYNTH_E --> VALIDATE_S["SynthesisOutputValidator<br/>final validation"]
-    
-    VALIDATE_S --> FORMAT{{"Output<br/>Format"}}
-    
-    FORMAT -->|Markdown| MD["Format<br/>Markdown"]
-    FORMAT -->|PDF| PDF2["Format<br/>PDF"]
-    FORMAT -->|JSON| JSON["Format<br/>JSON"]
-    
-    MD --> REPORT["ReportManager<br/>save report"]
-    PDF2 --> REPORT
-    JSON --> REPORT
-    
-    REPORT --> DONE["✅ Return<br/>ResearchState"]
-    
-    classDef orchestrator fill:#FF6B6B,stroke:#333,color:#fff,stroke-width:3px,font-weight:bold
-    classDef manager fill:#4ECDC4,stroke:#333,color:#fff,stroke-width:2px
-    classDef processor fill:#FFEAA7,stroke:#333,color:#000,stroke-width:2px
-    classDef validator fill:#96CEB4,stroke:#333,color:#fff,stroke-width:2px
-    classDef storage fill:#D4A5A5,stroke:#333,color:#fff,stroke-width:2px
-    classDef external fill:#FFB6C1,stroke:#333,color:#000,stroke-width:2px
-    classDef decision fill:#E8D5C4,stroke:#333,color:#000,stroke-width:2px
-    classDef output fill:#DDA15E,stroke:#333,color:#fff,stroke-width:2px
-    
-    class SYNTH,REASON,SYNTH_E,REPORT orchestrator
-    class WF,RERANK,DOC,ARXIV,WEB manager
-    class VALIDATE_R,VALIDATE_S validator
-    class VS,EMBED_D,EMBED_A,EMBED_W storage
-    class ARXIV_API,WEB_API external
-    class ROUTE,FORMAT decision
-    class DONE output
+    class START,DONE entry
+    class WF,OUTPUT orchestrator
+    class DOC_SCAN,COMBINE,RERANK,TOP_K processor
+    class REASON,SYNTH llm
+    class DOC_FAISS,DOC_DUAL,DOC_CACHE,ARXIV_EMBED,WEB_EMBED storage
+    class ARXIV_API,TAVILY,ARXIV_PDF,PDF_MGR api
+    class VAL_REASON,VAL_SYNTH validator
+    class ROUTE,RETRY,SYNTH_RETRY,FORMAT decision
+    class REASON_OK,SYNTH_OK success
 ```
-
 ---
 
 ## Key Class Relationships
